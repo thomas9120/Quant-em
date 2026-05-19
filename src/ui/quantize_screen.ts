@@ -25,22 +25,37 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     padding: 1,
   })
 
+  const header = new BoxRenderable(ctx, {
+    id: "quantize-header",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  })
+  container.add(header)
+
   const title = new TextRenderable(ctx, {
     id: "quantize-title",
     content: "=== Quantize GGUF Model ===",
     fg: "cyan",
   })
-  container.add(title)
+  header.add(title)
 
-  const onKey = (key: any) => {
-    if (key.name === "escape") popScreen()
-  }
-  renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  const columnHint = new TextRenderable(ctx, {
+    id: "quantize-column-hint",
+    content: "Tab switches lists",
+    fg: "gray",
+  })
+  header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
 
   if (files.length === 0) {
+    const onKey = (key: any) => {
+      if (key.name === "escape") popScreen()
+    }
+    renderer.keyInput.on("keypress", onKey)
+    setCleanup(() => renderer.keyInput.off("keypress", onKey))
+
     const noFiles = new TextRenderable(ctx, {
       id: "no-gguf",
       content: "No GGUF files found in source_models/",
@@ -66,13 +81,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   container.add(fileLabel)
 
   const fileOptions: SelectOption[] = files.map((f) => ({
-    name: `${f.path}  (${formatFileSize(f.size)})`,
-    description: "",
+    name: f.name,
+    description: `${f.path} (${formatFileSize(f.size)})`,
     value: f.path,
   }))
 
   const fileSelect = new SelectRenderable(ctx, {
     id: "file-select",
+    height: Math.min(Math.max(fileOptions.length + 2, 4), 10),
     options: fileOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -82,6 +98,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     selectedTextColor: "black",
     selectedDescriptionColor: "black",
     selectedIndex: 0,
+    showDescription: true,
   })
   container.add(fileSelect)
 
@@ -101,6 +118,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const quantSelect = new SelectRenderable(ctx, {
     id: "quant-select",
+    height: 10,
     options: quantOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -119,12 +137,21 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const hintText = new TextRenderable(ctx, {
     id: "quantize-hint",
-    content: "Enter: start quantization  |  Esc: back",
+    content: "Arrows: select  |  Tab: switch list  |  Enter: start quantization  |  Esc: back",
     fg: "gray",
   })
   container.add(hintText)
 
   let quantizing = false
+  let focusedSelect: "file" | "quant" = "file"
+
+  const focusSelectedList = () => {
+    if (focusedSelect === "file") {
+      fileSelect.focus()
+    } else {
+      quantSelect.focus()
+    }
+  }
 
   const startQuantize = async () => {
     if (quantizing) return
@@ -152,7 +179,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
     const result = await runProcess({
       cmd: llamaQuantize,
-      args: ["--threads", String(config.defaultThreads), inputFile, outputFile, quantType],
+      args: [inputFile, outputFile, quantType, String(config.defaultThreads)],
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
@@ -175,8 +202,28 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
 
-  fileSelect.on("itemSelected", () => startQuantize())
-  quantSelect.on("itemSelected", () => startQuantize())
+  const onKey = (key: any) => {
+    if (key.name === "escape") {
+      popScreen()
+      return
+    }
+
+    if (key.name === "tab") {
+      focusedSelect = focusedSelect === "file" ? "quant" : "file"
+      focusSelectedList()
+      return
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      startQuantize()
+    }
+  }
+  renderer.keyInput.on("keypress", onKey)
+  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+
+  process.nextTick(() => {
+    focusSelectedList()
+  })
 
   return container
 }
