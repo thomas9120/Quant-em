@@ -23,6 +23,10 @@ function getPlatformLabel(): string {
   return `${PLATFORM} ${ARCH}`
 }
 
+function quotePowerShellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
 interface ReleaseAsset {
   name: string
   browser_download_url: string
@@ -48,16 +52,16 @@ async function getLatestRelease(): Promise<GitHubRelease | null> {
 
 function findAssetForBackend(release: GitHubRelease, backend: string): ReleaseAsset | null {
   const platformPatterns: Record<string, string[]> = {
-    "win32-x64": ["win"],
-    "linux-x64": ["linux"],
-    "darwin-arm64": ["macos"],
+    "win32-x64": ["-bin-win-"],
+    "linux-x64": ["-bin-ubuntu-"],
+    "darwin-arm64": ["-bin-macos-arm64"],
   }
 
   const backendPatterns: Record<string, string[]> = {
-    cpu: ["cpu", "avx"],
-    "cuda-12": ["cuda-12", "cublas"],
-    "cuda-13": ["cuda-13"],
-    vulkan: ["vulkan"],
+    cpu: ["-cpu-", "-ubuntu-x64.", "-macos-arm64."],
+    "cuda-12": ["-cuda-12."],
+    "cuda-13": ["-cuda-13."],
+    vulkan: ["-vulkan-"],
   }
 
   const platformKey = `${PLATFORM}-${ARCH}`
@@ -66,9 +70,11 @@ function findAssetForBackend(release: GitHubRelease, backend: string): ReleaseAs
 
   for (const asset of release.assets) {
     const name = asset.name.toLowerCase()
+    const isLlamaBinary = name.startsWith("llama-") && name.includes("-bin-")
     const matchesPlatform = platPats.some((p) => name.includes(p))
     const matchesBackend = backPats.some((p) => name.includes(p))
-    if (matchesPlatform && matchesBackend && name.endsWith(".zip")) {
+    const matchesArchive = PLATFORM === "win32" ? name.endsWith(".zip") : name.endsWith(".tar.gz")
+    if (isLlamaBinary && matchesPlatform && matchesBackend && matchesArchive) {
       return asset
     }
   }
@@ -128,6 +134,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
   const backendSelect = new SelectRenderable(ctx, {
     id: "backend-select",
+    height: 8,
     options: backendOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -137,6 +144,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     selectedTextColor: "black",
     selectedDescriptionColor: "black",
     selectedIndex: 0,
+    showDescription: true,
   })
   container.add(backendSelect)
 
@@ -204,30 +212,25 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         throw new Error(`HTTP ${response.status}`)
       }
 
-      const contentLength = Number(response.headers.get("content-length") || 0)
-      let downloaded = 0
-      const chunks: Uint8Array[] = []
-
       const reader = response.body?.getReader()
       if (!reader) throw new Error("No response body")
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-        downloaded += value.length
-        const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
-        panel.setStatus(`Downloading... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
-      }
+      const contentLength = Number(response.headers.get("content-length") || 0)
+      let downloaded = 0
+      const file = Bun.file(tempFile).writer()
 
-      const totalBuffer = new Uint8Array(downloaded)
-      let offset = 0
-      for (const chunk of chunks) {
-        totalBuffer.set(chunk, offset)
-        offset += chunk.length
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          file.write(value)
+          downloaded += value.length
+          const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
+          panel.setStatus(`Downloading... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
+        }
+      } finally {
+        await file.end()
       }
-
-      await Bun.write(tempFile, totalBuffer)
 
       panel.addLine("Download complete. Extracting...", "green")
 
@@ -236,17 +239,27 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
       }
 
       if (PLATFORM === "win32") {
-        await runProcess({
+        const extractResult = await runProcess({
           cmd: "powershell",
-          args: ["-Command", `Expand-Archive -Path '${tempFile}' -DestinationPath '${installDir}' -Force`],
+          args: [
+            "-NoProfile",
+            "-Command",
+            `Expand-Archive -LiteralPath ${quotePowerShellLiteral(tempFile)} -DestinationPath ${quotePowerShellLiteral(installDir)} -Force`,
+          ],
           onOutput: (line) => panel.addLine(line, "white"),
         })
+        if (extractResult.exitCode !== 0) {
+          throw new Error(extractResult.stderr || `PowerShell extraction failed with exit code ${extractResult.exitCode}`)
+        }
       } else {
-        await runProcess({
+        const extractResult = await runProcess({
           cmd: "unzip",
           args: ["-o", tempFile, "-d", installDir],
           onOutput: (line) => panel.addLine(line, "white"),
         })
+        if (extractResult.exitCode !== 0) {
+          throw new Error(extractResult.stderr || `unzip failed with exit code ${extractResult.exitCode}`)
+        }
       }
 
       const quantizeBin = PLATFORM === "win32" ? "llama-quantize.exe" : "llama-quantize"
@@ -304,6 +317,10 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => renderer.keyInput.off("keypress", onKey))
+
+  process.nextTick(() => {
+    backendSelect.focus()
+  })
 
   return container
 }

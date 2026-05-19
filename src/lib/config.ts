@@ -8,21 +8,60 @@ function resolveProjectRoot(): string {
   return process.cwd()
 }
 
+function getHomeDir(): string | null {
+  return process.env.HOME || process.env.USERPROFILE || null
+}
+
+function readTokenFile(filePath: string): string | null {
+  try {
+    if (!fs.existsSync(filePath)) return null
+    const token = fs.readFileSync(filePath, "utf-8").trim()
+    return token || null
+  } catch {
+    return null
+  }
+}
+
+function detectHfToken(): string | null {
+  const envToken = process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN
+  if (envToken?.trim()) return envToken.trim()
+
+  const homeDir = getHomeDir()
+  const tokenPaths = [
+    process.env.HF_TOKEN_PATH,
+    process.env.HF_HOME ? path.join(process.env.HF_HOME, "token") : null,
+    homeDir ? path.join(homeDir, ".cache", "huggingface", "token") : null,
+  ].filter((value): value is string => Boolean(value))
+
+  for (const tokenPath of tokenPaths) {
+    const token = readTokenFile(tokenPath)
+    if (token) return token
+  }
+
+  return null
+}
+
 export function getConfigPath(): string {
   return path.join(resolveProjectRoot(), CONFIG_FILENAME)
 }
 
 export function loadConfig(): QuantEmConfig {
   const configPath = getConfigPath()
+  let config: QuantEmConfig = { ...DEFAULT_CONFIG }
   try {
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, "utf-8")
       const parsed = JSON.parse(raw)
-      return { ...DEFAULT_CONFIG, ...parsed }
+      config = { ...DEFAULT_CONFIG, ...parsed }
     }
   } catch {
   }
-  return { ...DEFAULT_CONFIG }
+
+  if (!config.hfToken) {
+    config.hfToken = detectHfToken()
+  }
+
+  return config
 }
 
 export function saveConfig(config: QuantEmConfig): void {

@@ -1,0 +1,9 @@
+{
+  "llamaCppPath": "C:\\Users\\pegas\\Desktop\\LLama\\Projects 2026\\Quant-em\\llama_cpp\\b9222",
+  "llamaCppVersion": "b9222",
+  "backend": "cuda-12",
+  "sourceModelsDir": "source_models",
+  "outputModelsDir": "output_models",
+  "defaultThreads": 8,
+  "hfToken": null
+}

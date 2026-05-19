@@ -3,6 +3,7 @@ import { BoxRenderable, TextRenderable, type RenderContext } from "@opentui/core
 import { loadConfig } from "../../lib/config"
 import { checkCommandExists } from "../../lib/process_runner"
 import { fileExists } from "../../lib/file_utils"
+import * as path from "path"
 
 export function createStatusBar(ctx: RenderContext): BoxRenderable {
   const container = new BoxRenderable(ctx, {
@@ -37,7 +38,10 @@ export async function updateStatusBar(ctx: RenderContext, bar: BoxRenderable) {
   const config = loadConfig()
   const parts: string[] = []
 
-  if (config.llamaCppPath && fileExists(config.llamaCppPath)) {
+  const quantizeBin = process.platform === "win32" ? "llama-quantize.exe" : "llama-quantize"
+  const hasQuantize = config.llamaCppPath && fileExists(path.join(config.llamaCppPath, quantizeBin))
+
+  if (hasQuantize) {
     parts.push(`llama.cpp: ${config.llamaCppVersion || "installed"}`)
   } else {
     parts.push("llama.cpp: not installed")

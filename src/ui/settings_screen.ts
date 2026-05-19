@@ -33,6 +33,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     { key: "defaultThreads", label: "Default threads:", value: String(config.defaultThreads) },
     { key: "hfToken", label: "HF token:", value: config.hfToken || "" },
   ]
+  const detectedHfToken = Boolean(config.hfToken)
 
   const inputs: InputRenderable[] = []
 
@@ -49,10 +50,19 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
       id: `settings-input-${field.key}`,
       value: field.value,
       placeholder: field.key === "hfToken" ? "hf_xxxx..." : "",
-      fg: "white",
+      textColor: "white",
     })
     container.add(input)
     inputs.push(input)
+
+    if (field.key === "hfToken" && detectedHfToken) {
+      const detectedText = new TextRenderable(ctx, {
+        id: "settings-hf-token-detected",
+        content: "Detected from saved Hugging Face credentials or environment.",
+        fg: "gray",
+      })
+      container.add(detectedText)
+    }
   }
 
   const statusText = new TextRenderable(ctx, {
@@ -73,13 +83,16 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   const save = () => {
     const values: Record<string, string> = {}
     for (let i = 0; i < fields.length; i++) {
-      values[fields[i].key] = inputs[i].value
+      const field = fields[i]
+      const input = inputs[i]
+      if (!field || !input) continue
+      values[field.key] = input.value
     }
 
     config.llamaCppPath = values.llamaCppPath || null
     config.sourceModelsDir = values.sourceModelsDir || "source_models"
     config.outputModelsDir = values.outputModelsDir || "output_models"
-    config.defaultThreads = parseInt(values.defaultThreads) || 8
+    config.defaultThreads = parseInt(values.defaultThreads || "") || 8
     config.hfToken = values.hfToken || null
 
     saveConfig(config)

@@ -10,6 +10,7 @@ import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
+import * as path from "path"
 
 export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
@@ -41,7 +42,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     id: "repo-input",
     value: "",
     placeholder: "org/model-name",
-    fg: "white",
+    textColor: "white",
   })
   container.add(repoInput)
 
@@ -57,7 +58,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     id: "include-input",
     value: "",
     placeholder: "*.gguf (leave empty for all files)",
-    fg: "white",
+    textColor: "white",
   })
   container.add(includeInput)
 
@@ -136,5 +137,3 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
 
   return container
 }
-
-import * as path from "path"

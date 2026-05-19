@@ -1,4 +1,3 @@
-import type { Subprocess } from "bun"
 import type { ProcessResult } from "../types"
 
 export type ProcessOutputCallback = (line: string, stream: "stdout" | "stderr") => void
@@ -18,18 +17,32 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
     const stdoutLines: string[] = []
     const stderrLines: string[] = []
 
-    const proc = Bun.spawn([opts.cmd, ...opts.args], {
-      cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+    let proc: ReturnType<typeof Bun.spawn>
+    try {
+      proc = Bun.spawn([opts.cmd, ...opts.args], {
+        cwd: opts.cwd,
+        env: { ...process.env, ...opts.env },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    } catch (err: any) {
+      const message = err?.message || String(err)
+      stderrLines.push(message)
+      opts.onOutput?.(message, "stderr")
+      opts.onStderr?.(message, "stderr")
+      resolve({
+        exitCode: -1,
+        stdout: "",
+        stderr: message,
+      })
+      return
+    }
 
     const reader = (
       stream: ReadableStream<Uint8Array>,
       label: "stdout" | "stderr",
       lines: string[],
-    ) => {
+    ): Promise<void> => {
       const reader = stream.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
@@ -47,7 +60,7 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
         }
       }
 
-      ;(async () => {
+      return (async () => {
         try {
           while (true) {
             const { done, value } = await reader.read()
@@ -63,17 +76,33 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
             }
             processChunk(decoder.decode(value, { stream: true }))
           }
-        } catch {
+        } catch (err: any) {
+          const message = err?.message || String(err)
+          lines.push(message)
+          opts.onOutput?.(message, label)
+          if (label === "stdout") opts.onStdout?.(message, label)
+          if (label === "stderr") opts.onStderr?.(message, label)
         }
       })()
     }
 
-    reader(proc.stdout as ReadableStream<Uint8Array>, "stdout", stdoutLines)
-    reader(proc.stderr as ReadableStream<Uint8Array>, "stderr", stderrLines)
+    const stdoutDone = reader(proc.stdout as ReadableStream<Uint8Array>, "stdout", stdoutLines)
+    const stderrDone = reader(proc.stderr as ReadableStream<Uint8Array>, "stderr", stderrLines)
 
-    proc.exited.then((code) => {
+    proc.exited.then(async (code) => {
+      await Promise.all([stdoutDone, stderrDone])
       resolve({
         exitCode: code,
+        stdout: stdoutLines.join("\n"),
+        stderr: stderrLines.join("\n"),
+      })
+    }).catch((err: any) => {
+      const message = err?.message || String(err)
+      stderrLines.push(message)
+      opts.onOutput?.(message, "stderr")
+      opts.onStderr?.(message, "stderr")
+      resolve({
+        exitCode: -1,
         stdout: stdoutLines.join("\n"),
         stderr: stderrLines.join("\n"),
       })

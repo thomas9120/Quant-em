@@ -6,6 +6,11 @@ out
 dist
 *.tgz
 
+# local llama.cpp installs and model artifacts
+llama_cpp/*
+source_models/*
+output_models/*
+
 # code coverage
 coverage
 *.lcov

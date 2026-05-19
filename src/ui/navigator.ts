@@ -1,12 +1,10 @@
-import type { CliRenderer, Renderable } from "@opentui/core"
 import type { BoxRenderable } from "@opentui/core"
+import type { CliRenderer } from "@opentui/core"
 
 type ScreenFactory = (renderer: CliRenderer) => BoxRenderable
 
 interface ScreenEntry {
-  screen: BoxRenderable
   factory: ScreenFactory
-  cleanup: (() => void) | null
 }
 
 const screenStack: ScreenEntry[] = []
@@ -24,10 +22,12 @@ export function pushScreen(factory: ScreenFactory) {
   if (!renderer) return
 
   if (currentScreen) {
+    if (currentCleanup) {
+      currentCleanup()
+      currentCleanup = null
+    }
     screenStack.push({
-      screen: currentScreen,
       factory: currentScreenFactory!,
-      cleanup: currentCleanup,
     })
     renderer.root.remove(currentScreen.id)
   }
@@ -53,8 +53,8 @@ export function popScreen() {
 
   const prev = screenStack.pop()!
   currentScreenFactory = prev.factory
-  currentCleanup = prev.cleanup
-  currentScreen = prev.screen
+  currentCleanup = null
+  currentScreen = prev.factory(renderer)
   renderer.root.add(currentScreen)
   renderer.requestRender()
 }
