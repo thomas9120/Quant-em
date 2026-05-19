@@ -26,9 +26,11 @@ export function pushScreen(factory: ScreenFactory) {
       currentCleanup()
       currentCleanup = null
     }
-    screenStack.push({
-      factory: currentScreenFactory!,
-    })
+    if (currentScreenFactory) {
+      screenStack.push({
+        factory: currentScreenFactory,
+      })
+    }
     renderer.root.remove(currentScreen.id)
   }
 

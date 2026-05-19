@@ -3,11 +3,12 @@ import {
   BoxRenderable,
   TextRenderable,
   SelectRenderable,
+  InputRenderable,
   type SelectOption,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
-import { scanForGgufFiles, formatFileSize } from "../lib/file_utils"
+import { scanForGgufFiles, formatFileSize, getGgufLayerCount } from "../lib/file_utils"
 import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import { QUANT_TYPES } from "../types"
@@ -42,7 +43,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const columnHint = new TextRenderable(ctx, {
     id: "quantize-column-hint",
-    content: "Tab switches lists",
+    content: "Tab switches fields",
     fg: "gray",
   })
   header.add(columnHint)
@@ -132,24 +133,75 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(quantSelect)
 
+  const layerInfoText = new TextRenderable(ctx, {
+    id: "layer-info",
+    content: "Determining layer count...",
+    fg: "gray",
+  })
+  container.add(layerInfoText)
+
+  const pruneLabel = new TextRenderable(ctx, {
+    id: "prune-label",
+    content: "Layers to prune (comma-separated, e.g. 0,2,5):",
+    fg: "white",
+    marginTop: 1,
+  })
+  container.add(pruneLabel)
+
+  const pruneInput = new InputRenderable(ctx, {
+    id: "prune-input",
+    value: "",
+    placeholder: "Leave empty for no pruning",
+    textColor: "white",
+  })
+  container.add(pruneInput)
+
+  const errorText = new TextRenderable(ctx, {
+    id: "prune-error",
+    content: "",
+    fg: "red",
+  })
+  container.add(errorText)
+
+  const updateLayerCount = () => {
+    const selectedFile = fileSelect.getSelectedOption()?.value as string
+    if (!selectedFile) {
+      layerInfoText.content = "Model layer count: unknown"
+      return
+    }
+    const fullPath = resolvePath(path.join(config.sourceModelsDir, selectedFile))
+    const count = getGgufLayerCount(fullPath)
+    layerInfoText.content = count !== null
+      ? `Model has ${count} layers (0-${count - 1})`
+      : "Model layer count: unknown"
+    errorText.content = ""
+  }
+
+  updateLayerCount()
+
   const panel = createProcessPanel(ctx, "quantize-panel")
   container.add(panel.container)
 
   const hintText = new TextRenderable(ctx, {
     id: "quantize-hint",
-    content: "Arrows: select  |  Tab: switch list  |  Enter: start quantization  |  Esc: back",
+    content: "Arrows: select  |  Tab: switch field  |  Enter: start quantization  |  Esc: back",
     fg: "gray",
   })
   container.add(hintText)
 
   let quantizing = false
-  let focusedSelect: "file" | "quant" = "file"
+  let focusedSelect: "file" | "quant" | "prune" = "file"
 
   const focusSelectedList = () => {
+    fileSelect.blur()
+    quantSelect.blur()
+    pruneInput.blur()
     if (focusedSelect === "file") {
       fileSelect.focus()
-    } else {
+    } else if (focusedSelect === "quant") {
       quantSelect.focus()
+    } else {
+      pruneInput.focus()
     }
   }
 
@@ -169,17 +221,49 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const outputFile = resolvePath(path.join(config.outputModelsDir, `${baseName}-${quantType}.gguf`))
     ensureDir(config.outputModelsDir)
 
+    const pruneValue = pruneInput.value.trim()
+    const pruneLayers = pruneValue.split(",").map(s => s.trim()).filter(s => s !== "")
+    if (pruneLayers.length > 0) {
+      const layerNums = pruneLayers.map(s => parseInt(s)).filter(n => !isNaN(n))
+      if (layerNums.length !== pruneLayers.length) {
+        errorText.content = "Invalid layer number detected (must be integers)"
+        return
+      }
+      const layerCount = getGgufLayerCount(inputFile)
+      if (layerCount !== null) {
+        const invalid = layerNums.filter(n => n < 0 || n >= layerCount)
+        if (invalid.length > 0) {
+          errorText.content = `Invalid layer(s): ${invalid.join(", ")}. Valid range: 0-${layerCount - 1}`
+          return
+        }
+      }
+      const unique = new Set(layerNums)
+      if (unique.size !== layerNums.length) {
+        errorText.content = "Duplicate layer numbers detected"
+        return
+      }
+    }
+    errorText.content = ""
+
     quantizing = true
     panel.clear()
     panel.setStatus("Quantizing...")
     panel.addLine(`Quantizing: ${selectedFile}`, "cyan")
     panel.addLine(`Output: ${baseName}-${quantType}.gguf`, "cyan")
     panel.addLine(`Type: ${quantType}`, "cyan")
+    if (pruneLayers.length > 0) {
+      panel.addLine(`Pruning layers: ${pruneLayers.join(", ")}`, "yellow")
+    }
     panel.addLine("", "white")
+
+    const args: string[] = [inputFile, outputFile, quantType, String(config.defaultThreads)]
+    if (pruneLayers.length > 0) {
+      args.push("--prune-layers", pruneLayers.join(","))
+    }
 
     const result = await runProcess({
       cmd: llamaQuantize,
-      args: [inputFile, outputFile, quantType, String(config.defaultThreads)],
+      args,
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
@@ -209,9 +293,13 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     if (key.name === "tab") {
-      focusedSelect = focusedSelect === "file" ? "quant" : "file"
+      focusedSelect = focusedSelect === "file" ? "quant" : focusedSelect === "quant" ? "prune" : "file"
       focusSelectedList()
       return
+    }
+
+    if ((key.name === "up" || key.name === "down") && focusedSelect === "file") {
+      process.nextTick(() => updateLayerCount())
     }
 
     if (key.name === "return" || key.name === "enter") {
@@ -224,6 +312,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   process.nextTick(() => {
     focusSelectedList()
   })
+
+  pruneInput.on("enter", () => startQuantize())
 
   return container
 }

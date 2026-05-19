@@ -73,6 +73,13 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(statusText)
 
+  const confirmText = new TextRenderable(ctx, {
+    id: "settings-confirm",
+    content: "",
+    fg: "yellow",
+  })
+  container.add(confirmText)
+
   const hintText = new TextRenderable(ctx, {
     id: "settings-hint",
     content: "Enter: save  |  Esc: back (discard)",
@@ -105,7 +112,31 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   }
 
   const onKey = (key: any) => {
-    if (key.name === "escape") popScreen()
+    if (key.name === "escape") {
+      const hasChanges = inputs.some((input, i) => {
+        const field = fields[i]
+        return field && input.value !== (field.key === "llamaCppPath" || field.key === "hfToken"
+          ? (config as any)[field.key] || ""
+          : (config as any)[field.key] || "")
+      })
+      if (hasChanges) {
+        confirmText.content = "Press Enter again to discard changes, or Esc to keep editing."
+        confirmText.requestRender()
+        const confirmEscape = (k: any) => {
+          if (k.name === "enter") {
+            renderer.keyInput.off("keypress", confirmEscape)
+            popScreen()
+          }
+          if (k.name === "escape") {
+            renderer.keyInput.off("keypress", confirmEscape)
+            confirmText.content = ""
+          }
+        }
+        renderer.keyInput.on("keypress", confirmEscape)
+      } else {
+        popScreen()
+      }
+    }
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => renderer.keyInput.off("keypress", onKey))

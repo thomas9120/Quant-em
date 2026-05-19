@@ -10,6 +10,7 @@ import { loadConfig, resolvePath } from "../lib/config"
 import { scanForSafetensorsDirs, listSubdirs } from "../lib/file_utils"
 import { runProcess, checkCommandExists } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
+import * as path from "path"
 
 export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
@@ -179,5 +180,3 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   return container
 }
-
-import * as path from "path"

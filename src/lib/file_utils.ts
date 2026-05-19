@@ -32,7 +32,7 @@ export function getFileSize(filePath: string): number {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 B"
+  if (bytes <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   const val = bytes / Math.pow(1024, i)
@@ -111,4 +111,94 @@ export function fileExists(filePath: string): boolean {
   } catch {
     return false
   }
+}
+
+const GGUF_VALUE_SIZES: Record<number, number> = {
+  0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4,
+  6: 4, 7: 1, 10: 8, 11: 8, 12: 8, 13: 2, 14: 2,
+}
+
+function readU64(fd: number, offset: number): bigint {
+  const buf = Buffer.alloc(8)
+  fs.readSync(fd, buf, 0, 8, offset)
+  return buf.readBigUInt64LE(0)
+}
+
+function readU32(fd: number, offset: number): number {
+  const buf = Buffer.alloc(4)
+  fs.readSync(fd, buf, 0, 4, offset)
+  return buf.readUInt32LE(0)
+}
+
+function skipGgufValue(fd: number, offset: number, type: number): number | null {
+  const fixed = GGUF_VALUE_SIZES[type]
+  if (fixed !== undefined) return fixed
+
+  if (type === 8) {
+    const len = Number(readU64(fd, offset))
+    return 8 + len
+  }
+
+  if (type === 9) {
+    const elemType = readU32(fd, offset)
+    const count = Number(readU64(fd, offset + 4))
+    if (elemType === 8) {
+      let dataOffset = 12
+      for (let i = 0; i < count; i++) {
+        const strLen = Number(readU64(fd, offset + dataOffset))
+        dataOffset += 8 + strLen
+      }
+      return dataOffset
+    }
+    const elemSize = GGUF_VALUE_SIZES[elemType]
+    if (elemSize === undefined) return null
+    return 12 + count * elemSize
+  }
+
+  return null
+}
+
+export function getGgufLayerCount(filePath: string): number | null {
+  let result: number | null = null
+  const MAX_METADATA_KV_COUNT = 10000
+  const MAX_KEY_LENGTH = 4096
+  const fd = fs.openSync(filePath, "r")
+  try {
+    const header = Buffer.alloc(24)
+    fs.readSync(fd, header, 0, 24, 0)
+
+    if (header.readUInt32LE(0) === GGUF_MAGIC) {
+      const metadataKvCount = Number(header.readBigUInt64LE(16))
+      if (metadataKvCount > MAX_METADATA_KV_COUNT) return null
+      let offset = 24
+
+      for (let i = 0; i < metadataKvCount; i++) {
+        const keyLen = Number(readU64(fd, offset))
+        if (keyLen > MAX_KEY_LENGTH) return null
+        offset += 8
+
+        const keyBuf = Buffer.alloc(keyLen)
+        fs.readSync(fd, keyBuf, 0, keyLen, offset)
+        const key = keyBuf.toString("utf-8")
+        offset += keyLen
+
+        const valueType = readU32(fd, offset)
+        offset += 4
+
+        if (key.endsWith(".block_count") && valueType === 4) {
+          result = readU32(fd, offset)
+          break
+        }
+
+        const skip = skipGgufValue(fd, offset, valueType)
+        if (skip === null) break
+        offset += skip
+      }
+    }
+  } catch {
+    result = null
+  } finally {
+    fs.closeSync(fd)
+  }
+  return result
 }

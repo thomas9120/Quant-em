@@ -101,16 +101,6 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
         stdout: stdoutLines.join("\n"),
         stderr: stderrLines.join("\n"),
       })
-    }).catch((err: any) => {
-      const message = err?.message || String(err)
-      stderrLines.push(message)
-      opts.onOutput?.(message, "stderr")
-      opts.onStderr?.(message, "stderr")
-      resolve({
-        exitCode: -1,
-        stdout: stdoutLines.join("\n"),
-        stderr: stderrLines.join("\n"),
-      })
     })
   })
 }
