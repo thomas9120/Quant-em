@@ -73,6 +73,13 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(statusText)
 
+  const confirmText = new TextRenderable(ctx, {
+    id: "settings-confirm",
+    content: "",
+    fg: "yellow",
+  })
+  container.add(confirmText)
+
   const hintText = new TextRenderable(ctx, {
     id: "settings-hint",
     content: "Enter: save  |  Esc: back (discard)",
@@ -80,7 +87,31 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(hintText)
 
+  const getOriginalValues = () => {
+    return fields.map((f) => f.value)
+  }
+
+  const hasChanges = () => {
+    const originals = getOriginalValues()
+    return inputs.some((input, i) => input.value !== originals[i])
+  }
+
+  let confirmEscapeActive = false
+  let confirmEscapeHandler: ((k: any) => void) | null = null
+
+  const removeConfirmEscape = () => {
+    if (confirmEscapeHandler) {
+      renderer.keyInput.off("keypress", confirmEscapeHandler)
+      confirmEscapeHandler = null
+      confirmEscapeActive = false
+      confirmText.content = ""
+      confirmText.requestRender()
+    }
+  }
+
   const save = () => {
+    removeConfirmEscape()
+
     const values: Record<string, string> = {}
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i]
@@ -98,6 +129,14 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     saveConfig(config)
     statusText.content = "Settings saved!"
     container.requestRender()
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i]
+      const input = inputs[i]
+      if (field && input) {
+        field.value = input.value
+      }
+    }
   }
 
   for (const input of inputs) {
@@ -105,10 +144,36 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   }
 
   const onKey = (key: any) => {
-    if (key.name === "escape") popScreen()
+    if (key.name === "escape") {
+      if (confirmEscapeActive) {
+        removeConfirmEscape()
+        return
+      }
+
+      if (hasChanges()) {
+        confirmText.content = "Press Enter to discard changes, or Esc to keep editing."
+        confirmText.requestRender()
+        confirmEscapeActive = true
+        confirmEscapeHandler = (k: any) => {
+          if (k.name === "enter") {
+            removeConfirmEscape()
+            popScreen()
+          }
+          if (k.name === "escape") {
+            removeConfirmEscape()
+          }
+        }
+        renderer.keyInput.on("keypress", confirmEscapeHandler)
+      } else {
+        popScreen()
+      }
+    }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    renderer.keyInput.off("keypress", onKey)
+    removeConfirmEscape()
+  })
 
   return container
 }

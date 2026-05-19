@@ -48,7 +48,7 @@ export function createProcessPanel(ctx: RenderContext, id: string): {
   }
 
   const clear = () => {
-    const children = scrollBox.getChildren()
+    const children = [...scrollBox.getChildren()]
     for (const child of children) {
       scrollBox.remove(child.id)
     }

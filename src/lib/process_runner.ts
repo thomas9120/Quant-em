@@ -1,6 +1,7 @@
 import type { ProcessResult } from "../types"
 
 export type ProcessOutputCallback = (line: string, stream: "stdout" | "stderr") => void
+export type StreamCallback = (line: string) => void
 
 export interface RunProcessOptions {
   cmd: string
@@ -8,8 +9,8 @@ export interface RunProcessOptions {
   cwd?: string
   env?: Record<string, string>
   onOutput?: ProcessOutputCallback
-  onStdout?: ProcessOutputCallback
-  onStderr?: ProcessOutputCallback
+  onStdout?: StreamCallback
+  onStderr?: StreamCallback
 }
 
 const DEFAULT_PROCESS_ENV: Record<string, string> = {
@@ -34,7 +35,7 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
       const message = err?.message || String(err)
       stderrLines.push(message)
       opts.onOutput?.(message, "stderr")
-      opts.onStderr?.(message, "stderr")
+      opts.onStderr?.(message)
       resolve({
         exitCode: -1,
         stdout: "",
@@ -60,8 +61,8 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
           const line = part.replace(/\r$/, "")
           lines.push(line)
           opts.onOutput?.(line, label)
-          if (label === "stdout") opts.onStdout?.(line, label)
-          if (label === "stderr") opts.onStderr?.(line, label)
+          if (label === "stdout") opts.onStdout?.(line)
+          if (label === "stderr") opts.onStderr?.(line)
         }
       }
 
@@ -74,8 +75,8 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
                 const line = buffer.replace(/\r$/, "")
                 lines.push(line)
                 opts.onOutput?.(line, label)
-                if (label === "stdout") opts.onStdout?.(line, label)
-                if (label === "stderr") opts.onStderr?.(line, label)
+                if (label === "stdout") opts.onStdout?.(line)
+                if (label === "stderr") opts.onStderr?.(line)
               }
               break
             }
@@ -85,8 +86,8 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
           const message = err?.message || String(err)
           lines.push(message)
           opts.onOutput?.(message, label)
-          if (label === "stdout") opts.onStdout?.(message, label)
-          if (label === "stderr") opts.onStderr?.(message, label)
+          if (label === "stdout") opts.onStdout?.(message)
+          if (label === "stderr") opts.onStderr?.(message)
         }
       })()
     }
@@ -94,20 +95,9 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
     const stdoutDone = reader(proc.stdout as ReadableStream<Uint8Array>, "stdout", stdoutLines)
     const stderrDone = reader(proc.stderr as ReadableStream<Uint8Array>, "stderr", stderrLines)
 
-    proc.exited.then(async (code) => {
-      await Promise.all([stdoutDone, stderrDone])
+    Promise.all([stdoutDone, stderrDone, proc.exited]).then(([_, __, code]) => {
       resolve({
         exitCode: code,
-        stdout: stdoutLines.join("\n"),
-        stderr: stderrLines.join("\n"),
-      })
-    }).catch((err: any) => {
-      const message = err?.message || String(err)
-      stderrLines.push(message)
-      opts.onOutput?.(message, "stderr")
-      opts.onStderr?.(message, "stderr")
-      resolve({
-        exitCode: -1,
         stdout: stdoutLines.join("\n"),
         stderr: stderrLines.join("\n"),
       })
