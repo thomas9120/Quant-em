@@ -79,18 +79,30 @@ export function scanForSafetensorsDirs(dir: string): string[] {
   const fullDir = resolvePath(dir)
   if (!fs.existsSync(fullDir)) return []
 
-  const entries = fs.readdirSync(fullDir, { withFileTypes: true })
   const dirs: string[] = []
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const subDir = path.join(fullDir, entry.name)
-    const files = fs.readdirSync(subDir)
-    if (files.some((f) => f.endsWith(".safetensors"))) {
-      dirs.push(entry.name)
+  function walk(currentDir: string, relativePath: string) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    let hasSafetensors = false
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".safetensors")) {
+        hasSafetensors = true
+        break
+      }
+    }
+    if (hasSafetensors && relativePath) {
+      dirs.push(relativePath)
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const subDir = path.join(currentDir, entry.name)
+        const relPath = relativePath ? path.join(relativePath, entry.name) : entry.name
+        walk(subDir, relPath)
+      }
     }
   }
 
+  walk(fullDir, "")
   return dirs.sort()
 }
 
@@ -115,7 +127,7 @@ export function fileExists(filePath: string): boolean {
 
 const GGUF_VALUE_SIZES: Record<number, number> = {
   0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4,
-  6: 4, 7: 1, 10: 8, 11: 8, 12: 8, 13: 2, 14: 2,
+  6: 4, 7: 1, 10: 8, 11: 8, 12: 8, 14: 2,
 }
 
 function readU64(fd: number, offset: number): bigint {

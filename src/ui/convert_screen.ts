@@ -6,8 +6,8 @@ import {
   type SelectOption,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
-import { loadConfig, resolvePath } from "../lib/config"
-import { scanForSafetensorsDirs, listSubdirs } from "../lib/file_utils"
+import { loadConfig, resolvePath, ensureDir } from "../lib/config"
+import { scanForSafetensorsDirs } from "../lib/file_utils"
 import { runProcess, checkCommandExists } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
@@ -31,15 +31,15 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(title)
 
-  const onKey = (key: any) => {
-    if (key.name === "escape") popScreen()
-  }
-  renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
-
   const dirs = scanForSafetensorsDirs(config.sourceModelsDir)
 
   if (dirs.length === 0) {
+    const onKey = (key: any) => {
+      if (key.name === "escape") popScreen()
+    }
+    renderer.keyInput.on("keypress", onKey)
+    setCleanup(() => renderer.keyInput.off("keypress", onKey))
+
     const noModels = new TextRenderable(ctx, {
       id: "no-safetensors",
       content: "No safetensors directories found in source_models/",
@@ -124,6 +124,17 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   let converting = false
+  let focusedSelect: "dir" | "precision" = "dir"
+
+  const focusSelectedList = () => {
+    dirSelect.blur()
+    precisionSelect.blur()
+    if (focusedSelect === "dir") {
+      dirSelect.focus()
+    } else {
+      precisionSelect.focus()
+    }
+  }
 
   const startConvert = async () => {
     if (converting) return
@@ -149,7 +160,8 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     panel.addLine(`Converting ${selectedDir} to GGUF (${precision})...`, "cyan")
 
     const modelDir = resolvePath(path.join(config.sourceModelsDir, selectedDir))
-    const outputFile = path.join(modelDir, `${selectedDir}-${precision}.gguf`)
+    ensureDir(config.outputModelsDir)
+    const outputFile = resolvePath(path.join(config.outputModelsDir, `${selectedDir}-${precision}.gguf`))
 
     const args = [scriptPath, modelDir, "--outfile", outputFile, "--outtype", precision]
 
@@ -175,8 +187,28 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
 
-  dirSelect.on("itemSelected", () => startConvert())
-  precisionSelect.on("itemSelected", () => startConvert())
+  const onKey = (key: any) => {
+    if (key.name === "escape") {
+      popScreen()
+      return
+    }
+
+    if (key.name === "tab") {
+      focusedSelect = focusedSelect === "dir" ? "precision" : "dir"
+      focusSelectedList()
+      return
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      startConvert()
+    }
+  }
+  renderer.keyInput.on("keypress", onKey)
+  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+
+  process.nextTick(() => {
+    focusSelectedList()
+  })
 
   return container
 }

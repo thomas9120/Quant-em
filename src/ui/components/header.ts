@@ -1,6 +1,5 @@
 import type { CliRenderer } from "@opentui/core"
-import { BoxRenderable, TextRenderable, type RenderContext, type BoxOptions } from "@opentui/core"
-import { ASCIIFontRenderable } from "@opentui/core"
+import { BoxRenderable, TextRenderable, type RenderContext } from "@opentui/core"
 
 const LOGO_LINES = [
   "   ___                  _                         ",

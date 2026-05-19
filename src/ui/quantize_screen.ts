@@ -163,16 +163,24 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(errorText)
 
+  let cachedLayerCount: number | null = null
+  let cachedLayerFile: string | null = null
+
   const updateLayerCount = () => {
     const selectedFile = fileSelect.getSelectedOption()?.value as string
     if (!selectedFile) {
       layerInfoText.content = "Model layer count: unknown"
+      cachedLayerCount = null
+      cachedLayerFile = null
       return
     }
     const fullPath = resolvePath(path.join(config.sourceModelsDir, selectedFile))
-    const count = getGgufLayerCount(fullPath)
-    layerInfoText.content = count !== null
-      ? `Model has ${count} layers (0-${count - 1})`
+    if (fullPath !== cachedLayerFile) {
+      cachedLayerCount = getGgufLayerCount(fullPath)
+      cachedLayerFile = fullPath
+    }
+    layerInfoText.content = cachedLayerCount !== null
+      ? `Model has ${cachedLayerCount} layers (0-${cachedLayerCount - 1})`
       : "Model layer count: unknown"
     errorText.content = ""
   }
@@ -229,7 +237,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
         errorText.content = "Invalid layer number detected (must be integers)"
         return
       }
-      const layerCount = getGgufLayerCount(inputFile)
+      const layerCount = cachedLayerFile === inputFile ? cachedLayerCount : getGgufLayerCount(inputFile)
       if (layerCount !== null) {
         const invalid = layerNums.filter(n => n < 0 || n >= layerCount)
         if (invalid.length > 0) {

@@ -84,6 +84,11 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
+    if (!repoId.includes("/") || repoId.split("/").length !== 2 || repoId.includes("..")) {
+      panel.addLine("Error: Invalid repo ID. Expected format: org/model-name", "red")
+      return
+    }
+
     downloading = true
     panel.clear()
     panel.setStatus("Downloading...")
@@ -98,16 +103,17 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     if (include) {
       args.push("--include", include)
     }
+    const env: Record<string, string> = {
+      HF_HUB_DISABLE_PROGRESS_BARS: "1",
+    }
     if (config.hfToken) {
-      args.push("--token", config.hfToken)
+      env.HF_TOKEN = config.hfToken
     }
 
     const result = await runProcess({
       cmd: getHfCommand(),
       args,
-      env: {
-        HF_HUB_DISABLE_PROGRESS_BARS: "1",
-      },
+      env,
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },

@@ -3,15 +3,15 @@ import {
   BoxRenderable,
   TextRenderable,
   SelectRenderable,
-  InputRenderable,
   type SelectOption,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, saveConfig } from "../lib/config"
-import { runProcess, checkCommandExists } from "../lib/process_runner"
+import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
 import * as fs from "fs"
+import * as os from "os"
 
 const PLATFORM = process.platform
 const ARCH = process.arch
@@ -166,6 +166,8 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     const backend = backendSelect.getSelectedOption()?.value as string
     if (!backend) return
 
+    const freshConfig = loadConfig()
+
     installing = true
     panel.clear()
     panel.setStatus("Fetching latest release...")
@@ -198,7 +200,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
     try {
       const tempFile = path.join(
-        process.env.TEMP || "/tmp",
+        os.tmpdir(),
         asset.name,
       )
 
@@ -253,12 +255,12 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         }
       } else {
         const extractResult = await runProcess({
-          cmd: "unzip",
-          args: ["-o", tempFile, "-d", installDir],
+          cmd: "tar",
+          args: ["-xzf", tempFile, "-C", installDir],
           onOutput: (line) => panel.addLine(line, "white"),
         })
         if (extractResult.exitCode !== 0) {
-          throw new Error(extractResult.stderr || `unzip failed with exit code ${extractResult.exitCode}`)
+          throw new Error(extractResult.stderr || `tar extraction failed with exit code ${extractResult.exitCode}`)
         }
       }
 
@@ -281,10 +283,10 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
       if (foundBinary) {
         const binaryDir = path.dirname(foundBinary)
-        config.llamaCppPath = binaryDir
-        config.llamaCppVersion = release.tag_name
-        config.backend = backend as any
-        saveConfig(config)
+        freshConfig.llamaCppPath = binaryDir
+        freshConfig.llamaCppVersion = release.tag_name
+        freshConfig.backend = backend as any
+        saveConfig(freshConfig)
 
         panel.addLine("", "white")
         panel.addLine("Installation complete!", "green")
@@ -310,10 +312,15 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     installing = false
   }
 
-  backendSelect.on("itemSelected", () => startInstall())
-
   const onKey = (key: any) => {
-    if (key.name === "escape") popScreen()
+    if (key.name === "escape") {
+      popScreen()
+      return
+    }
+
+    if (key.name === "return" || key.name === "enter") {
+      startInstall()
+    }
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => renderer.keyInput.off("keypress", onKey))

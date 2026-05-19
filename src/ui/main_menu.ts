@@ -7,7 +7,7 @@ import {
 } from "@opentui/core"
 import { createHeader } from "./components/header"
 import { createStatusBar } from "./components/status_bar"
-import { pushScreen, getStackDepth } from "./navigator"
+import { pushScreen } from "./navigator"
 import { createQuantizeScreen } from "./quantize_screen"
 import { createDownloadScreen } from "./download_screen"
 import { createConvertScreen } from "./convert_screen"

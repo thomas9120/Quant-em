@@ -4,7 +4,6 @@ import {
   SelectRenderable,
   type SelectOption,
   type RenderContext,
-  type CliRenderer,
 } from "@opentui/core"
 import { scanForGgufFiles, formatFileSize } from "../../lib/file_utils"
 import { loadConfig } from "../../lib/config"
