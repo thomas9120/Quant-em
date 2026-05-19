@@ -1,6 +1,6 @@
 # Quant-em
 
-Quant-em is a terminal UI for downloading Hugging Face models, converting safetensors models to GGUF, and quantizing GGUF models with llama.cpp.
+Quant-em is a terminal UI for downloading Hugging Face models, converting safetensors models to GGUF, and quantizing GGUF models with llama.cpp. This is a work-in-progress.
 
 ## Requirements
 
