@@ -35,3 +35,7 @@ Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to 
 - Quantize Model: choose a GGUF file, select a quantization type, optionally enter comma-separated layer numbers to prune, then start quantization.
 
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
+
+## Screenshot
+
+![Quant-em TUI screenshot](screenshots/Screenshot%202026-05-19%20182045.png)
