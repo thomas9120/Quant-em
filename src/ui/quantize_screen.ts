@@ -43,7 +43,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const columnHint = new TextRenderable(ctx, {
     id: "quantize-column-hint",
-    content: "Tab switches fields",
+    content: "Layers: reading...",
     fg: "gray",
   })
   header.add(columnHint)
@@ -89,7 +89,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const fileSelect = new SelectRenderable(ctx, {
     id: "file-select",
-    height: Math.min(Math.max(fileOptions.length + 2, 4), 10),
+    height: Math.min(Math.max(fileOptions.length + 2, 4), 7),
     options: fileOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -119,7 +119,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const quantSelect = new SelectRenderable(ctx, {
     id: "quant-select",
-    height: 10,
+    height: 7,
     options: quantOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -133,16 +133,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(quantSelect)
 
-  const layerInfoText = new TextRenderable(ctx, {
-    id: "layer-info",
-    content: "Determining layer count...",
-    fg: "gray",
-  })
-  container.add(layerInfoText)
-
   const pruneLabel = new TextRenderable(ctx, {
     id: "prune-label",
-    content: "Layers to prune (comma-separated, e.g. 0,2,5):",
+    content: "Prune layers (optional):",
     fg: "white",
     marginTop: 1,
   })
@@ -150,8 +143,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const pruneInput = new InputRenderable(ctx, {
     id: "prune-input",
+    width: "100%",
     value: "",
-    placeholder: "Leave empty for no pruning",
+    placeholder: "Comma-separated layers, e.g. 0,2,5",
     textColor: "white",
   })
   container.add(pruneInput)
@@ -169,7 +163,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const updateLayerCount = () => {
     const selectedFile = fileSelect.getSelectedOption()?.value as string
     if (!selectedFile) {
-      layerInfoText.content = "Model layer count: unknown"
+      columnHint.content = "Layers: unknown"
+      columnHint.fg = "yellow"
       cachedLayerCount = null
       cachedLayerFile = null
       return
@@ -179,9 +174,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       cachedLayerCount = getGgufLayerCount(fullPath)
       cachedLayerFile = fullPath
     }
-    layerInfoText.content = cachedLayerCount !== null
-      ? `Model has ${cachedLayerCount} layers (0-${cachedLayerCount - 1})`
-      : "Model layer count: unknown"
+    columnHint.content = cachedLayerCount !== null
+      ? `Layers: ${cachedLayerCount} (0-${cachedLayerCount - 1})`
+      : "Layers: unknown"
+    columnHint.fg = cachedLayerCount !== null ? "cyan" : "yellow"
     errorText.content = ""
   }
 
