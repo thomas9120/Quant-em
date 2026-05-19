@@ -27,7 +27,7 @@ function formatTier(tier: string): string {
   return tier.replace(/^\w/, (c) => c.toUpperCase())
 }
 
-function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
+export function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
   const rawLayers = value.split(",").map((s) => s.trim()).filter(Boolean)
   if (rawLayers.length === 0) {
     return { layers: [], valid: true, message: "No layers selected for pruning" }
@@ -62,7 +62,7 @@ function parsePruneLayers(value: string, layerCount: number | null): PruneValida
   }
 }
 
-function getFailureHints(result: { exitCode: number | null; stderr: string }, cmd: string): string[] {
+export function getFailureHints(result: { exitCode: number | null; stderr: string }, cmd: string): string[] {
   const text = result.stderr.toLowerCase()
   const hints: string[] = []
 
