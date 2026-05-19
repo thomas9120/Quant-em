@@ -3,7 +3,7 @@ import * as path from "path"
 import { resolvePath } from "./config"
 import type { ModelFile } from "../types"
 
-const GGUF_MAGIC = 0x46475547
+const GGUF_MAGIC = 0x46554747
 
 export function detectFileType(filePath: string): "gguf" | "safetensors" | "unknown" {
   const ext = path.extname(filePath).toLowerCase()
