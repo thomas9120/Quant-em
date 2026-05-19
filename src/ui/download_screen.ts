@@ -104,6 +104,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     const result = await runProcess({
       cmd: "hf",
       args,
+      env: {
+        HF_HUB_DISABLE_PROGRESS_BARS: "1",
+      },
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },

@@ -12,6 +12,11 @@ export interface RunProcessOptions {
   onStderr?: ProcessOutputCallback
 }
 
+const DEFAULT_PROCESS_ENV: Record<string, string> = {
+  PYTHONIOENCODING: "utf-8",
+  PYTHONUTF8: "1",
+}
+
 export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
   return new Promise((resolve) => {
     const stdoutLines: string[] = []
@@ -21,7 +26,7 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
     try {
       proc = Bun.spawn([opts.cmd, ...opts.args], {
         cwd: opts.cwd,
-        env: { ...process.env, ...opts.env },
+        env: { ...process.env, ...DEFAULT_PROCESS_ENV, ...opts.env },
         stdout: "pipe",
         stderr: "pipe",
       })
