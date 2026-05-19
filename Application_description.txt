@@ -1,0 +1,10 @@
+
+Quant-em - a TUI program for quantizing models using llama.cpp quantizing tool
+
+Terminal UI built with openTUI: https://opentui.com/
+
+Convert both safetensors and bf16 gguf files to quantized gguf models (research various options)
+
+Portable folder structure? Download from huggingface - is this possible in a terminal UI? 
+
+download HF models into a folder within the program directory. Quantize models to another directory within that folder. Also needs to be able to quantize a model the user puts within the folder directory. So maybe name the folders Source_models and output_models. 

@@ -1,0 +1,91 @@
+import type { CliRenderer, Renderable } from "@opentui/core"
+import type { BoxRenderable } from "@opentui/core"
+
+type ScreenFactory = (renderer: CliRenderer) => BoxRenderable
+
+interface ScreenEntry {
+  screen: BoxRenderable
+  factory: ScreenFactory
+  cleanup: (() => void) | null
+}
+
+const screenStack: ScreenEntry[] = []
+let currentScreen: BoxRenderable | null = null
+let currentCleanup: (() => void) | null = null
+let currentScreenFactory: ScreenFactory | null = null
+let renderer: CliRenderer | null = null
+
+export function initNavigator(r: CliRenderer, initialFactory: ScreenFactory) {
+  renderer = r
+  pushScreen(initialFactory)
+}
+
+export function pushScreen(factory: ScreenFactory) {
+  if (!renderer) return
+
+  if (currentScreen) {
+    screenStack.push({
+      screen: currentScreen,
+      factory: currentScreenFactory!,
+      cleanup: currentCleanup,
+    })
+    renderer.root.remove(currentScreen.id)
+  }
+
+  currentScreenFactory = factory
+  currentCleanup = null
+  currentScreen = factory(renderer)
+  renderer.root.add(currentScreen)
+  renderer.requestRender()
+}
+
+export function popScreen() {
+  if (!renderer || screenStack.length === 0) return
+
+  if (currentCleanup) {
+    currentCleanup()
+    currentCleanup = null
+  }
+
+  if (currentScreen) {
+    renderer.root.remove(currentScreen.id)
+  }
+
+  const prev = screenStack.pop()!
+  currentScreenFactory = prev.factory
+  currentCleanup = prev.cleanup
+  currentScreen = prev.screen
+  renderer.root.add(currentScreen)
+  renderer.requestRender()
+}
+
+export function replaceScreen(factory: ScreenFactory) {
+  if (!renderer) return
+
+  if (currentCleanup) {
+    currentCleanup()
+    currentCleanup = null
+  }
+
+  if (currentScreen) {
+    renderer.root.remove(currentScreen.id)
+  }
+
+  currentScreenFactory = factory
+  currentCleanup = null
+  currentScreen = factory(renderer)
+  renderer.root.add(currentScreen)
+  renderer.requestRender()
+}
+
+export function setCleanup(fn: () => void) {
+  currentCleanup = fn
+}
+
+export function getCurrentScreen(): BoxRenderable | null {
+  return currentScreen
+}
+
+export function getStackDepth(): number {
+  return screenStack.length
+}
