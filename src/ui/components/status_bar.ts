@@ -2,6 +2,7 @@ import type { CliRenderer } from "@opentui/core"
 import { BoxRenderable, TextRenderable, type RenderContext } from "@opentui/core"
 import { loadConfig } from "../../lib/config"
 import { checkCommandExists } from "../../lib/process_runner"
+import { checkHfCommandExists, getProjectHfCommand } from "../../lib/hf_cli"
 import { fileExists } from "../../lib/file_utils"
 import * as path from "path"
 
@@ -50,8 +51,9 @@ export async function updateStatusBar(ctx: RenderContext, bar: BoxRenderable) {
   const hasPython = await checkCommandExists("python")
   parts.push(hasPython ? "Python: yes" : "Python: no")
 
-  const hasHf = await checkCommandExists("hf")
-  parts.push(hasHf ? "HF CLI: yes" : "HF CLI: no")
+  const hasProjectHf = Boolean(getProjectHfCommand())
+  const hasHf = await checkHfCommandExists()
+  parts.push(hasHf ? `HF CLI: ${hasProjectHf ? "venv" : "yes"}` : "HF CLI: no")
 
   const rightText = bar.getRenderable("status-right") as TextRenderable | undefined
   if (rightText) {

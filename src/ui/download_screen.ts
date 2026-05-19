@@ -9,6 +9,7 @@ import {
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
+import { getHfCommand } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
 
@@ -102,7 +103,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     const result = await runProcess({
-      cmd: "hf",
+      cmd: getHfCommand(),
       args,
       env: {
         HF_HUB_DISABLE_PROGRESS_BARS: "1",
