@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
 import { createQuantizeScreen, getFailureHints, parsePruneLayers } from "../src/ui/quantize_screen"
+import {
+  buildQuantizeArgs,
+  buildTensorTypeFileContent,
+  formatMixedQuantLabel,
+  parseLayerQuantRules,
+} from "../src/lib/quantization_rules"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -55,6 +61,45 @@ describe("quantize screen helpers", () => {
     expect(getFailureHints({ exitCode: -1, stderr: "ENOENT" }, "llama-quantize.exe")[0]).toContain("Could not start")
     expect(getFailureHints({ exitCode: 1, stderr: "invalid quant type" }, "llama-quantize.exe")[0]).toContain("quantization type")
   })
+
+  test("validates advanced layer quantization rules", () => {
+    expect(parseLayerQuantRules("", 32)).toMatchObject({ valid: true, rules: [] })
+    expect(parseLayerQuantRules("0-3=q8_0; 4=Q5_K_M; 5-31=Q4_K_M", 32)).toMatchObject({
+      valid: true,
+      rules: [
+        { startLayer: 0, endLayer: 3, quantType: "Q8_0" },
+        { startLayer: 4, endLayer: 4, quantType: "Q5_K_M" },
+        { startLayer: 5, endLayer: 31, quantType: "Q4_K_M" },
+      ],
+    })
+    expect(parseLayerQuantRules("4-2=Q8_0", 32)).toMatchObject({ valid: false })
+    expect(parseLayerQuantRules("0-4=Q8_0; 4-8=Q5_K_M", 32)).toMatchObject({ valid: false })
+    expect(parseLayerQuantRules("5-8=Q8_0; 0-3=Q5_K_M", 32)).toMatchObject({ valid: false })
+    expect(parseLayerQuantRules("31-32=Q8_0", 32)).toMatchObject({ valid: false })
+    expect(parseLayerQuantRules("0-3=NOPE", 32)).toMatchObject({ valid: false })
+  })
+
+  test("builds tensor override file contents and quantize args", () => {
+    const rules = parseLayerQuantRules("0=Q8_0; 1-3=Q5_K_M", 4).rules
+    expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.(1|2|3)\\..*=Q5_K_M")
+    expect(buildQuantizeArgs("in.gguf", "out.gguf", "Q4_K_M", 8, [], null)).toEqual([
+      "in.gguf",
+      "out.gguf",
+      "Q4_K_M",
+      "8",
+    ])
+    expect(buildQuantizeArgs("in.gguf", "out.gguf", "Q4_K_M", 8, ["2"], "rules.txt")).toEqual([
+      "--prune-layers",
+      "2",
+      "--tensor-type-file",
+      "rules.txt",
+      "in.gguf",
+      "out.gguf",
+      "Q4_K_M",
+      "8",
+    ])
+    expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
+  })
 })
 
 describe("quantize screen render", () => {
@@ -65,6 +110,7 @@ describe("quantize screen render", () => {
 
     let frame = captureCharFrame()
     expect(frame).toContain("Layers: 7 (0-6)")
+    expect(frame).toContain("Advanced layer quantization")
     expect(frame).toContain("Output filename:")
     expect(frame).toContain("tiny-Q6_K.gguf")
     expect(frame).not.toContain("Selectasource")
@@ -75,6 +121,8 @@ describe("quantize screen render", () => {
 
     frame = captureCharFrame()
     expect(frame).toContain("Estimated output size")
+    expect(frame).toContain("Layer")
+    expect(frame).toContain("none")
     expect(frame).toContain("Press Enter again")
 
     renderer.destroy()
