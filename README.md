@@ -34,6 +34,16 @@ Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to 
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
 - Quantize Model: choose a GGUF file, select a quantization type, optionally enter comma-separated layer numbers to prune, then start quantization.
 
+### Per-layer quantization
+
+On the Quantize Model screen, the selected quantization type is the default for the whole model. To override specific transformer layers, enter semicolon-separated rules in the advanced layer quantization field:
+
+```text
+0-3=Q8_0; 4-20=Q5_K_M; 21-31=Q4_K_M
+```
+
+Each rule uses `layer` or `start-end=QUANT_TYPE`. Layers are zero-based, must not overlap, and must be within the layer range shown at the top of the screen.
+
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
 
 ## Screenshot

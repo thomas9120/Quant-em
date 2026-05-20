@@ -31,6 +31,12 @@ export interface QuantType {
   estimatedSizeRatio: number
 }
 
+export interface LayerQuantRule {
+  startLayer: number
+  endLayer: number
+  quantType: string
+}
+
 export interface QuantizationHistoryEntry {
   input: string
   output: string
