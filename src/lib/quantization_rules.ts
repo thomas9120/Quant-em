@@ -116,8 +116,22 @@ export function buildQuantizeArgs(
   threads: number,
   pruneLayers: string[],
   tensorTypeFile: string | null,
+  options: {
+    allowRequantize?: boolean
+    tokenEmbeddingType?: string
+    outputTensorType?: string
+  } = {},
 ): string[] {
   const args: string[] = []
+  if (options.allowRequantize) {
+    args.push("--allow-requantize")
+  }
+  if (options.tokenEmbeddingType) {
+    args.push("--token-embedding-type", options.tokenEmbeddingType)
+  }
+  if (options.outputTensorType) {
+    args.push("--output-tensor-type", options.outputTensorType)
+  }
   if (pruneLayers.length > 0) {
     args.push("--prune-layers", pruneLayers.join(","))
   }

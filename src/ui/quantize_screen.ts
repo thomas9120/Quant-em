@@ -18,11 +18,16 @@ import {
   formatMixedQuantLabel,
   parseLayerQuantRules,
 } from "../lib/quantization_rules"
+import {
+  buildProfileTensorTypeFileContent,
+  formatProfileSummary,
+  scanForQuantizationProfiles,
+} from "../lib/quantization_profiles"
 import { QUANT_TYPES } from "../types"
 import * as path from "path"
 import * as fs from "fs"
 
-type FocusedField = "file" | "quant" | "rules" | "output" | "prune"
+type FocusedField = "file" | "mode" | "quant" | "profile" | "rules" | "output" | "prune"
 
 interface PruneValidation {
   layers: string[]
@@ -96,8 +101,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
   const config = loadConfig()
   const compactLayout = renderer.height < 32
-  const fileListHeight = compactLayout ? 4 : 7
-  const quantListHeight = compactLayout ? 4 : 6
+  const fileListHeight = compactLayout ? 3 : 7
+  const modeListHeight = compactLayout ? 3 : 4
+  const quantListHeight = compactLayout ? 3 : 6
 
   const container = new BoxRenderable(ctx, {
     id: "quantize-screen",
@@ -131,6 +137,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
+  const profiles = scanForQuantizationProfiles(config.quantProfilesDir)
+  const hasProfiles = profiles.length > 0
 
   if (files.length === 0) {
     const onKey = (key: any) => {
@@ -189,12 +197,41 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const quantLabel = new TextRenderable(ctx, {
     id: "quant-label",
-    content: "Default quantization type:",
+    content: "Quantization mode:",
     fg: "white",
     height: 1,
     marginTop: 1,
   })
   container.add(quantLabel)
+
+  const modeOptions: SelectOption[] = [
+    { name: "Standard", description: "Use selected quant type and optional manual layer overrides", value: "standard" },
+    { name: "JSON profile", description: "Use a quant_profiles/*.json tensor profile", value: "profile" },
+  ]
+  const modeSelect = new SelectRenderable(ctx, {
+    id: "mode-select",
+    height: modeListHeight,
+    options: modeOptions,
+    backgroundColor: "black",
+    textColor: "white",
+    focusedBackgroundColor: "black",
+    focusedTextColor: "white",
+    selectedBackgroundColor: "cyan",
+    selectedTextColor: "black",
+    selectedDescriptionColor: "black",
+    selectedIndex: profiles.length > 0 && config.lastQuantProfile ? 1 : 0,
+    showDescription: !compactLayout,
+  })
+  container.add(modeSelect)
+
+  const defaultQuantLabel = new TextRenderable(ctx, {
+    id: "default-quant-label",
+    content: "Default quantization type:",
+    fg: "white",
+    height: 1,
+    marginTop: 1,
+  })
+  container.add(defaultQuantLabel)
 
   const quantOptions: SelectOption[] = QUANT_TYPES.map((qt) => ({
     name: `${qt.name.padEnd(10)} ${formatTier(qt.tier)}`,
@@ -218,6 +255,38 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     showDescription: !compactLayout,
   })
   container.add(quantSelect)
+
+  const profileOptions: SelectOption[] = profiles.map((profile) => ({
+    name: profile.name,
+    description: formatProfileSummary(profile.profile),
+    value: profile.path,
+  }))
+  const configuredProfileIndex = Math.max(0, profiles.findIndex((profile) => profile.path === config.lastQuantProfile))
+  const profileSelect = new SelectRenderable(ctx, {
+    id: "profile-select",
+    height: Math.min(Math.max(profileOptions.length + 2, 3), compactLayout ? 3 : 4),
+    options: profileOptions,
+    backgroundColor: "black",
+    textColor: "white",
+    focusedBackgroundColor: "black",
+    focusedTextColor: "white",
+    selectedBackgroundColor: "cyan",
+    selectedTextColor: "black",
+    selectedDescriptionColor: "black",
+    selectedIndex: configuredProfileIndex,
+    showDescription: !compactLayout,
+  })
+  if (hasProfiles) {
+    const profileLabel = new TextRenderable(ctx, {
+      id: "profile-label",
+      content: "JSON quantization profile:",
+      fg: "white",
+      height: 1,
+      marginTop: 1,
+    })
+    container.add(profileLabel)
+    container.add(profileSelect)
+  }
 
   const rulesLabel = new TextRenderable(ctx, {
     id: "layer-quant-label",
@@ -306,14 +375,25 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   const getSelectedFile = () => fileSelect.getSelectedOption()?.value as string | undefined
+  const getSelectedMode = () => modeSelect.getSelectedOption()?.value as "standard" | "profile" | undefined
   const getSelectedQuantType = () => quantSelect.getSelectedOption()?.value as string | undefined
   const getSelectedQuantConfig = () => QUANT_TYPES.find((qt) => qt.name === getSelectedQuantType())
+  const getSelectedProfilePath = () => profileSelect.getSelectedOption()?.value as string | undefined
+  const getSelectedProfile = () => profiles.find((profile) => profile.path === getSelectedProfilePath())?.profile || null
+  const getEffectiveQuantType = () => getSelectedMode() === "profile"
+    ? getSelectedProfile()?.baseQuantType
+    : getSelectedQuantType()
 
   const getDefaultOutputName = () => {
     const selectedFile = getSelectedFile()
-    const quantType = getSelectedQuantType()
+    const quantType = getEffectiveQuantType()
     if (!selectedFile || !quantType) return ""
     const baseName = path.basename(selectedFile, ".gguf")
+    if (getSelectedMode() === "profile") {
+      const profile = getSelectedProfile()
+      const tag = profile?.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "profile"
+      return `${baseName}-${tag}-${quantType}.gguf`
+    }
     return `${baseName}-${quantType}.gguf`
   }
 
@@ -405,7 +485,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const focusSelectedList = () => {
     fileSelect.blur()
+    modeSelect.blur()
     quantSelect.blur()
+    profileSelect.blur()
     rulesInput.blur()
     outputInput.blur()
     pruneInput.blur()
@@ -413,6 +495,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       fileSelect.focus()
     } else if (focusedSelect === "quant") {
       quantSelect.focus()
+    } else if (focusedSelect === "mode") {
+      modeSelect.focus()
+    } else if (focusedSelect === "profile" && hasProfiles) {
+      profileSelect.focus()
     } else if (focusedSelect === "rules") {
       rulesInput.focus()
     } else if (focusedSelect === "output") {
@@ -424,13 +510,20 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const showPreview = (): boolean => {
     const selectedFile = getSelectedFile()
-    const quantType = getSelectedQuantType()
+    const mode = getSelectedMode()
+    const profile = getSelectedProfile()
+    const quantType = getEffectiveQuantType()
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
 
     if (!selectedFile || !quantType || !outputFile) {
       errorText.content = "Select a model, default quant type, and output filename first"
+      errorText.fg = "red"
+      return false
+    }
+    if (mode === "profile" && !profile) {
+      errorText.content = "Select a valid JSON profile first"
       errorText.fg = "red"
       return false
     }
@@ -443,7 +536,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (!layerQuantValidation.valid) return false
 
     const inputFile = resolvePath(path.join(config.sourceModelsDir, selectedFile))
-    const quantConfig = getSelectedQuantConfig()
+    const quantConfig = mode === "profile"
+      ? QUANT_TYPES.find((qt) => qt.name === profile?.baseQuantType)
+      : getSelectedQuantConfig()
     const selectedModel = files.find((f) => f.path === selectedFile)
     const estimatedOutput = quantConfig && selectedModel
       ? formatFileSize(selectedModel.size * quantConfig.estimatedSizeRatio)
@@ -454,9 +549,19 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.clear()
     panel.setStatus(willOverwrite ? "Confirm overwrite" : "Confirm quantization")
     panel.addLine("Quantization preview", "cyan")
+    if (compactLayout) {
+      panel.addLine(`Estimated output size: ${estimatedOutput}${layerQuantValidation.rules.length > 0 ? " (rough)" : ""}`, "white")
+      panel.addLine(willOverwrite ? "Press Enter again to overwrite." : "Press Enter again to start.", willOverwrite ? "yellow" : "green")
+    }
     panel.addLine(`Input: ${compactLayout ? path.basename(inputFile) : inputFile}`, "white")
     panel.addLine(`Output: ${compactLayout ? path.basename(outputFile) : outputFile}`, willOverwrite ? "yellow" : "white")
-    panel.addLine(`Default type: ${quantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
+    if (mode === "profile" && profile) {
+      panel.addLine(`Profile: ${profile.name}`, "white")
+      panel.addLine(`Base type: ${profile.baseQuantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
+      panel.addLine(`Tensor rules: ${profile.rules.length}`, "white")
+    } else {
+      panel.addLine(`Default type: ${quantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
+    }
     if (!compactLayout) {
       panel.addLine(`Layer overrides: ${layerSummary}`, "white")
     }
@@ -468,23 +573,28 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (compactLayout) {
       panel.addLine(`Layer overrides: ${layerSummary}`, "white")
     }
-    panel.addLine(`Estimated output size: ${estimatedOutput}${layerQuantValidation.rules.length > 0 ? " (rough)" : ""}`, "white")
-    if (layerQuantValidation.rules.length > 0) {
+    if (!compactLayout) {
+      panel.addLine(`Estimated output size: ${estimatedOutput}${layerQuantValidation.rules.length > 0 ? " (rough)" : ""}`, "white")
+    }
+    if (mode !== "profile" && layerQuantValidation.rules.length > 0) {
       panel.addLine("Advanced mixed quantization should be tested for quality and speed.", "yellow")
     }
-    if (willOverwrite) {
-      panel.addLine("Warning: output file already exists. Press Enter again to overwrite.", "yellow")
-    } else {
-      panel.addLine("Press Enter again to start.", "green")
+    if (!compactLayout) {
+      if (willOverwrite) {
+        panel.addLine("Warning: output file already exists. Press Enter again to overwrite.", "yellow")
+      } else {
+        panel.addLine("Press Enter again to start.", "green")
+      }
     }
     previewReady = true
     hintText.content = "Enter: confirm  |  Tab/arrows/type: edit preview  |  Esc: back"
     return true
   }
 
-  const rememberRun = (selectedFile: string, quantType: string, historyQuantType: string, outputFile: string, pruneLayers: string[], success: boolean, exitCode: number | null) => {
+  const rememberRun = (selectedFile: string, quantType: string, historyQuantType: string, outputFile: string, pruneLayers: string[], success: boolean, exitCode: number | null, profilePath: string | null) => {
     config.lastQuantSource = selectedFile
     config.lastQuantType = quantType
+    config.lastQuantProfile = profilePath
     config.quantizationHistory = [
       {
         input: selectedFile,
@@ -509,11 +619,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     const selectedFile = getSelectedFile()
-    const quantType = getSelectedQuantType()
+    const mode = getSelectedMode()
+    const profile = getSelectedProfile()
+    const profilePath = mode === "profile" ? getSelectedProfilePath() || null : null
+    const quantType = getEffectiveQuantType()
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
-    if (!selectedFile || !quantType || !outputFile || !validation.valid || !layerQuantValidation.valid) {
+    if (!selectedFile || !quantType || !outputFile || !validation.valid || !layerQuantValidation.valid || (mode === "profile" && !profile)) {
       previewReady = false
       return
     }
@@ -531,8 +644,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.setStatus("Quantizing...")
     panel.addLine(`Quantizing: ${selectedFile}`, "cyan")
     panel.addLine(`Output: ${outputFile}`, "cyan")
-    panel.addLine(`Default type: ${quantType}`, "cyan")
-    if (layerQuantValidation.rules.length > 0) {
+    if (mode === "profile" && profile) {
+      panel.addLine(`Profile: ${profile.name}`, "cyan")
+      panel.addLine(`Base type: ${profile.baseQuantType}`, "cyan")
+      panel.addLine(`Tensor rules: ${profile.rules.length}`, "cyan")
+    } else {
+      panel.addLine(`Default type: ${quantType}`, "cyan")
+    }
+    if (mode !== "profile" && layerQuantValidation.rules.length > 0) {
       panel.addLine(`Layer overrides: ${formatLayerQuantSummary(layerQuantValidation.rules)}`, "cyan")
     }
     if (validation.layers.length > 0) {
@@ -541,12 +660,20 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.addLine("", "white")
 
     let tensorTypeFile: string | null = null
-    if (layerQuantValidation.rules.length > 0) {
+    if (mode === "profile" && profile) {
+      const outputBase = path.basename(outputFile, path.extname(outputFile))
+      tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.profile-tensor-types.txt`)
+      fs.writeFileSync(resolvePath(tensorTypeFile), buildProfileTensorTypeFileContent(profile), "utf-8")
+    } else if (layerQuantValidation.rules.length > 0) {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.tensor-types.txt`)
       fs.writeFileSync(resolvePath(tensorTypeFile), buildTensorTypeFileContent(layerQuantValidation.rules), "utf-8")
     }
-    const args = buildQuantizeArgs(inputFile, outputFile, quantType, config.defaultThreads, validation.layers, tensorTypeFile ? resolvePath(tensorTypeFile) : null)
+    const args = buildQuantizeArgs(inputFile, outputFile, quantType, config.defaultThreads, validation.layers, tensorTypeFile ? resolvePath(tensorTypeFile) : null, {
+      allowRequantize: profile?.allowRequantize,
+      tokenEmbeddingType: profile?.tokenEmbeddingType,
+      outputTensorType: profile?.outputTensorType,
+    })
 
     const result = await runProcess({
       cmd: llamaQuantize,
@@ -564,7 +691,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
     quantizing = false
     const success = result.exitCode === 0
-    rememberRun(selectedFile, quantType, formatMixedQuantLabel(quantType, layerQuantValidation.rules), outputFile, validation.layers, success, result.exitCode)
+    const historyQuantType = mode === "profile" && profile
+      ? `profile: ${profile.name}; base ${profile.baseQuantType}`
+      : formatMixedQuantLabel(quantType, layerQuantValidation.rules)
+    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath)
 
     if (success) {
       panel.setStatus("Complete!")
@@ -592,8 +722,12 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
     if (key.name === "tab") {
       focusedSelect = focusedSelect === "file"
+        ? "mode"
+        : focusedSelect === "mode"
         ? "quant"
         : focusedSelect === "quant"
+          ? (hasProfiles ? "profile" : "rules")
+          : focusedSelect === "profile"
           ? "rules"
           : focusedSelect === "rules"
           ? "output"
@@ -604,7 +738,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
-    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "quant")) {
+    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "profile")) {
       process.nextTick(() => updateDerivedFields())
     }
 

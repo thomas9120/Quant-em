@@ -44,6 +44,31 @@ On the Quantize Model screen, the selected quantization type is the default for 
 
 Each rule uses `layer` or `start-end=QUANT_TYPE`. Layers are zero-based, must not overlap, and must be within the layer range shown at the top of the screen.
 
+### JSON quantization profiles
+
+Quant-em can also load reusable JSON profiles from `quant_profiles/`. Profiles describe a base quantization type plus optional per-tensor regex overrides that are passed to `llama-quantize` with `--tensor-type-file`.
+
+Example:
+
+```json
+{
+  "profileVersion": 1,
+  "name": "Example Mixed Tensor Profile",
+  "baseQuantType": "Q4_K_M",
+  "tokenEmbeddingType": "Q8_0",
+  "outputTensorType": "Q6_K",
+  "allowRequantize": false,
+  "rules": [
+    {
+      "pattern": "^blk\\.\\d+\\.attn_q\\.weight$",
+      "type": "Q8_0"
+    }
+  ]
+}
+```
+
+Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides.
+
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
 
 ## Screenshot

@@ -28,6 +28,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.production.local
 .env.local
 
+# local app settings may contain private tokens
+quant-em-config.json
+
 # caches
 .eslintcache
 .cache

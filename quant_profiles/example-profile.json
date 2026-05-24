@@ -1,0 +1,22 @@
+{
+  "profileVersion": 1,
+  "name": "Example Mixed Tensor Profile",
+  "description": "Small example profile showing per-tensor regex overrides.",
+  "source": {
+    "kind": "manual"
+  },
+  "baseQuantType": "Q4_K_M",
+  "tokenEmbeddingType": "Q8_0",
+  "outputTensorType": "Q6_K",
+  "allowRequantize": false,
+  "rules": [
+    {
+      "pattern": "^blk\\.\\d+\\.attn_q\\.weight$",
+      "type": "Q8_0"
+    },
+    {
+      "pattern": "^blk\\.\\d+\\.attn_k\\.weight$",
+      "type": "Q8_0"
+    }
+  ]
+}

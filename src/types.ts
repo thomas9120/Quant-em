@@ -4,10 +4,12 @@ export interface QuantEmConfig {
   backend: "cpu" | "cuda-12" | "cuda-13" | "vulkan" | null
   sourceModelsDir: string
   outputModelsDir: string
+  quantProfilesDir: string
   defaultThreads: number
   hfToken: string | null
   lastQuantType: string | null
   lastQuantSource: string | null
+  lastQuantProfile: string | null
   quantizationHistory: QuantizationHistoryEntry[]
 }
 
@@ -35,6 +37,26 @@ export interface LayerQuantRule {
   startLayer: number
   endLayer: number
   quantType: string
+}
+
+export interface TensorQuantRule {
+  pattern: string
+  type: string
+}
+
+export interface QuantizationProfile {
+  profileVersion: 1
+  name: string
+  description?: string
+  source?: {
+    kind: "reference-gguf" | "manual" | "imported"
+    fileName?: string
+  }
+  baseQuantType: string
+  tokenEmbeddingType?: string
+  outputTensorType?: string
+  allowRequantize?: boolean
+  rules: TensorQuantRule[]
 }
 
 export interface QuantizationHistoryEntry {
@@ -76,9 +98,11 @@ export const DEFAULT_CONFIG: QuantEmConfig = {
   backend: null,
   sourceModelsDir: "source_models",
   outputModelsDir: "output_models",
+  quantProfilesDir: "quant_profiles",
   defaultThreads: 8,
   hfToken: null,
   lastQuantType: null,
   lastQuantSource: null,
+  lastQuantProfile: null,
   quantizationHistory: [],
 }

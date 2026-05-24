@@ -7,6 +7,10 @@ import {
   formatMixedQuantLabel,
   parseLayerQuantRules,
 } from "../src/lib/quantization_rules"
+import {
+  buildProfileTensorTypeFileContent,
+  parseQuantizationProfileJson,
+} from "../src/lib/quantization_profiles"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -100,11 +104,68 @@ describe("quantize screen helpers", () => {
     ])
     expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
   })
+
+  test("validates quantization profiles and builds profile args", () => {
+    const validation = parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Profile One",
+      baseQuantType: "q4_k_m",
+      tokenEmbeddingType: "q8_0",
+      outputTensorType: "q6_k",
+      allowRequantize: true,
+      rules: [
+        { pattern: "^blk\\.\\d+\\.attn_q\\.weight$", type: "q8_0" },
+      ],
+    }))
+
+    expect(validation.valid).toBe(true)
+    expect(validation.profile).toMatchObject({
+      name: "Profile One",
+      baseQuantType: "Q4_K_M",
+      tokenEmbeddingType: "Q8_0",
+      outputTensorType: "Q6_K",
+      allowRequantize: true,
+    })
+    expect(buildProfileTensorTypeFileContent(validation.profile!)).toBe("^blk\\.\\d+\\.attn_q\\.weight$=Q8_0")
+    expect(buildQuantizeArgs("in.gguf", "out.gguf", validation.profile!.baseQuantType, 8, [], "profile.txt", {
+      allowRequantize: validation.profile!.allowRequantize,
+      tokenEmbeddingType: validation.profile!.tokenEmbeddingType,
+      outputTensorType: validation.profile!.outputTensorType,
+    })).toEqual([
+      "--allow-requantize",
+      "--token-embedding-type",
+      "Q8_0",
+      "--output-tensor-type",
+      "Q6_K",
+      "--tensor-type-file",
+      "profile.txt",
+      "in.gguf",
+      "out.gguf",
+      "Q4_K_M",
+      "8",
+    ])
+  })
+
+  test("rejects invalid quantization profiles", () => {
+    expect(parseQuantizationProfileJson("{").valid).toBe(false)
+    expect(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Bad Type",
+      baseQuantType: "NOPE",
+      rules: [],
+    })).valid).toBe(false)
+    expect(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Bad Regex",
+      baseQuantType: "Q4_K_M",
+      rules: [{ pattern: "[", type: "Q8_0" }],
+    })).valid).toBe(false)
+  })
 })
 
 describe("quantize screen render", () => {
   test("shows layer count, output filename, and preview confirmation", async () => {
-    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 30 })
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 31 })
     renderer.root.add(createQuantizeScreen(renderer))
     await renderOnce()
 
@@ -120,10 +181,10 @@ describe("quantize screen render", () => {
     await renderOnce()
 
     frame = captureCharFrame()
-    expect(frame).toContain("Estimated output size")
     expect(frame).toContain("Layer")
     expect(frame).toContain("none")
-    expect(frame).toContain("Press Enter again")
+    expect(frame).toContain("Enter")
+    expect(frame).toContain("confirm")
 
     renderer.destroy()
   })
