@@ -1,0 +1,14 @@
+{
+  "llamaCppPath": null,
+  "llamaCppVersion": null,
+  "backend": null,
+  "sourceModelsDir": "source_models",
+  "outputModelsDir": "output_models",
+  "quantProfilesDir": "quant_profiles",
+  "defaultThreads": 8,
+  "hfToken": null,
+  "lastQuantType": null,
+  "lastQuantSource": null,
+  "lastQuantProfile": null,
+  "quantizationHistory": []
+}

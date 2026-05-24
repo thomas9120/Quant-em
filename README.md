@@ -24,6 +24,12 @@ bun install
 bun run start
 ```
 
+## Local Config
+
+Quant-em stores local settings in `quant-em-config.json`. That file is ignored by git because it can contain machine-specific paths and private Hugging Face tokens.
+
+Fresh clones do not need this file. The app uses built-in defaults and writes a local config when settings are saved. See `quant-em-config.example.json` for the safe, token-free shape.
+
 ## Basic Use
 
 Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to go back.
