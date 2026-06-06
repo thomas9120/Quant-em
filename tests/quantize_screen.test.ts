@@ -296,6 +296,8 @@ describe("convert screen render", () => {
     expect(frame).toContain("gemma-4-31B-it-qat-q4_0-unquantized-heretic")
     expect(frame).toContain("llama-test-model")
     expect(frame).toContain("Output precision:")
+    expect(frame).toContain("General-purpose intermediate")
+    expect(frame).toContain("source safetensors are BF16")
 
     renderer.destroy()
   })
