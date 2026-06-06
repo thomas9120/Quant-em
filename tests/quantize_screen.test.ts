@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
+import { createConvertScreen } from "../src/ui/convert_screen"
 import { createQuantizeScreen, getFailureHints, parsePruneLayers } from "../src/ui/quantize_screen"
 import {
   buildQuantizeArgs,
@@ -45,6 +46,10 @@ beforeEach(() => {
   fs.mkdirSync(path.join(tempDir, "source_models"), { recursive: true })
   fs.mkdirSync(path.join(tempDir, "output_models"), { recursive: true })
   writeFakeGguf(path.join(tempDir, "source_models", "tiny.gguf"), 7)
+  fs.mkdirSync(path.join(tempDir, "source_models", "gemma-4-31B-it-qat-q4_0-unquantized-heretic"), { recursive: true })
+  fs.mkdirSync(path.join(tempDir, "source_models", "llama-test-model"), { recursive: true })
+  fs.writeFileSync(path.join(tempDir, "source_models", "gemma-4-31B-it-qat-q4_0-unquantized-heretic", "model-00001-of-00002.safetensors"), "")
+  fs.writeFileSync(path.join(tempDir, "source_models", "llama-test-model", "model.safetensors"), "")
   process.env.QUANT_EM_PROJECT_ROOT = tempDir
   process.chdir(tempDir)
 })
@@ -192,6 +197,21 @@ describe("quantize screen render", () => {
     expect(frame).toContain("none")
     expect(frame).toContain("Enter")
     expect(frame).toContain("confirm")
+
+    renderer.destroy()
+  })
+})
+
+describe("convert screen render", () => {
+  test("shows safetensors model directories", async () => {
+    const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({ width: 110, height: 32 })
+    renderer.root.add(createConvertScreen(renderer))
+    await renderOnce()
+
+    const frame = captureCharFrame()
+    expect(frame).toContain("gemma-4-31B-it-qat-q4_0-unquantized-heretic")
+    expect(frame).toContain("llama-test-model")
+    expect(frame).toContain("Output precision:")
 
     renderer.destroy()
   })

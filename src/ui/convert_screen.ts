@@ -73,6 +73,8 @@ function getRequirementsPath(scriptDir: string): string {
 export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
   const config = loadConfig()
+  const compactLayout = renderer.height < 28
+  const dirListHeight = compactLayout ? 4 : 8
 
   const container = new BoxRenderable(ctx, {
     id: "convert-screen",
@@ -130,6 +132,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   const dirSelect = new SelectRenderable(ctx, {
     id: "dir-select",
+    height: Math.min(Math.max(dirOptions.length + 2, 4), dirListHeight),
     options: dirOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -139,6 +142,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     selectedTextColor: "black",
     selectedDescriptionColor: "black",
     selectedIndex: 0,
+    showDescription: !compactLayout,
   })
   container.add(dirSelect)
 
@@ -159,6 +163,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   const precisionSelect = new SelectRenderable(ctx, {
     id: "precision-select",
+    height: 6,
     options: precisionOptions,
     backgroundColor: "black",
     textColor: "white",
