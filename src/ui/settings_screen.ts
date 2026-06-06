@@ -27,7 +27,8 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   container.add(title)
 
   const fields = [
-    { key: "llamaCppPath", label: "llama.cpp path:", value: config.llamaCppPath || "" },
+    { key: "llamaCppPath", label: "llama.cpp binary path:", value: config.llamaCppPath || "" },
+    { key: "llamaCppSourcePath", label: "llama.cpp source path:", value: config.llamaCppSourcePath || "" },
     { key: "sourceModelsDir", label: "Source models dir:", value: config.sourceModelsDir },
     { key: "outputModelsDir", label: "Output models dir:", value: config.outputModelsDir },
     { key: "defaultThreads", label: "Default threads:", value: String(config.defaultThreads) },
@@ -121,6 +122,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     config.llamaCppPath = values.llamaCppPath || null
+    config.llamaCppSourcePath = values.llamaCppSourcePath || null
     config.sourceModelsDir = values.sourceModelsDir || "source_models"
     config.outputModelsDir = values.outputModelsDir || "output_models"
     config.defaultThreads = parseInt(values.defaultThreads || "") || 8

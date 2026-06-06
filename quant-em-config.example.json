@@ -1,5 +1,6 @@
 {
   "llamaCppPath": null,
+  "llamaCppSourcePath": null,
   "llamaCppVersion": null,
   "backend": null,
   "sourceModelsDir": "source_models",

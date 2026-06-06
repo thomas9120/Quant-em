@@ -35,10 +35,20 @@ Fresh clones do not need this file. The app uses built-in defaults and writes a 
 Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to go back.
 
 - Setup: install or manage llama.cpp binaries.
-- Settings: configure llama.cpp path, source model directory, output directory, threads, and Hugging Face token.
+- Settings: configure llama.cpp binary/source paths, source model directory, output directory, threads, and Hugging Face token.
 - Download Model: download a Hugging Face repo into `source_models/`.
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
 - Quantize Model: choose a GGUF file, select a quantization type, optionally enter comma-separated layer numbers to prune, then start quantization.
+
+### Conversion setup
+
+The GGUF converter is not a standalone Python file. It needs the llama.cpp source tree, including `gguf-py/`, plus Python packages from llama.cpp's conversion requirements. Quant-em's Setup screen downloads the matching llama.cpp source archive alongside the binary tools and saves it as the llama.cpp source path.
+
+If Python reports a missing package such as `torch`, `numpy`, or `transformers`, install llama.cpp's conversion requirements from that source path:
+
+```bash
+python -m pip install -r requirements.txt
+```
 
 ### Per-layer quantization
 

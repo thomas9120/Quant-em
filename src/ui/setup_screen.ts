@@ -27,6 +27,83 @@ function quotePowerShellLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
+async function downloadFile(url: string, destination: string, onProgress?: (downloaded: number, total: number) => void): Promise<void> {
+  const response = await fetch(url, {
+    headers: { "User-Agent": "quant-em" },
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("No response body")
+
+  const contentLength = Number(response.headers.get("content-length") || 0)
+  let downloaded = 0
+  const file = Bun.file(destination).writer()
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      file.write(value)
+      downloaded += value.length
+      onProgress?.(downloaded, contentLength)
+    }
+  } finally {
+    await file.end()
+  }
+}
+
+function findFile(dir: string, fileName: string): string | null {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isFile() && entry.name === fileName) return fullPath
+    if (entry.isDirectory()) {
+      const found = findFile(fullPath, fileName)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+async function extractArchive(archivePath: string, destination: string, onOutput: (line: string) => void): Promise<void> {
+  if (PLATFORM === "win32") {
+    const extractResult = await runProcess({
+      cmd: "powershell",
+      args: [
+        "-NoProfile",
+        "-Command",
+        `Expand-Archive -LiteralPath ${quotePowerShellLiteral(archivePath)} -DestinationPath ${quotePowerShellLiteral(destination)} -Force`,
+      ],
+      onOutput,
+    })
+    if (extractResult.exitCode !== 0) {
+      throw new Error(extractResult.stderr || `PowerShell extraction failed with exit code ${extractResult.exitCode}`)
+    }
+  } else if (archivePath.endsWith(".zip")) {
+    const extractResult = await runProcess({
+      cmd: "unzip",
+      args: ["-q", archivePath, "-d", destination],
+      onOutput,
+    })
+    if (extractResult.exitCode !== 0) {
+      throw new Error(extractResult.stderr || `unzip extraction failed with exit code ${extractResult.exitCode}`)
+    }
+  } else {
+    const extractResult = await runProcess({
+      cmd: "tar",
+      args: ["-xzf", archivePath, "-C", destination],
+      onOutput,
+    })
+    if (extractResult.exitCode !== 0) {
+      throw new Error(extractResult.stderr || `tar extraction failed with exit code ${extractResult.exitCode}`)
+    }
+  }
+}
+
 interface ReleaseAsset {
   name: string
   browser_download_url: string
@@ -206,33 +283,10 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
       panel.addLine(`Downloading to temp: ${tempFile}`, "gray")
 
-      const response = await fetch(asset.browser_download_url, {
-        headers: { "User-Agent": "quant-em" },
+      await downloadFile(asset.browser_download_url, tempFile, (downloaded, contentLength) => {
+        const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
+        panel.setStatus(`Downloading... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error("No response body")
-
-      const contentLength = Number(response.headers.get("content-length") || 0)
-      let downloaded = 0
-      const file = Bun.file(tempFile).writer()
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          file.write(value)
-          downloaded += value.length
-          const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
-          panel.setStatus(`Downloading... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
-        }
-      } finally {
-        await file.end()
-      }
 
       panel.addLine("Download complete. Extracting...", "green")
 
@@ -240,50 +294,33 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         fs.mkdirSync(installDir, { recursive: true })
       }
 
-      if (PLATFORM === "win32") {
-        const extractResult = await runProcess({
-          cmd: "powershell",
-          args: [
-            "-NoProfile",
-            "-Command",
-            `Expand-Archive -LiteralPath ${quotePowerShellLiteral(tempFile)} -DestinationPath ${quotePowerShellLiteral(installDir)} -Force`,
-          ],
-          onOutput: (line) => panel.addLine(line, "white"),
-        })
-        if (extractResult.exitCode !== 0) {
-          throw new Error(extractResult.stderr || `PowerShell extraction failed with exit code ${extractResult.exitCode}`)
-        }
-      } else {
-        const extractResult = await runProcess({
-          cmd: "tar",
-          args: ["-xzf", tempFile, "-C", installDir],
-          onOutput: (line) => panel.addLine(line, "white"),
-        })
-        if (extractResult.exitCode !== 0) {
-          throw new Error(extractResult.stderr || `tar extraction failed with exit code ${extractResult.exitCode}`)
-        }
-      }
+      await extractArchive(tempFile, installDir, (line) => panel.addLine(line, "white"))
 
       const quantizeBin = PLATFORM === "win32" ? "llama-quantize.exe" : "llama-quantize"
 
-      function findBinary(dir: string): string | null {
-        const entries = fs.readdirSync(dir, { withFileTypes: true })
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name)
-          if (entry.isFile() && entry.name === quantizeBin) return fullPath
-          if (entry.isDirectory()) {
-            const found = findBinary(fullPath)
-            if (found) return found
-          }
-        }
-        return null
-      }
+      const foundBinary = findFile(installDir, quantizeBin)
 
-      const foundBinary = findBinary(installDir)
+      panel.addLine("Downloading llama.cpp source for GGUF conversion tools...", "cyan")
+      const sourceZip = path.join(os.tmpdir(), `llama.cpp-${release.tag_name}-source.zip`)
+      const sourceDir = path.join(installDir, "source")
+      await downloadFile(
+        `https://github.com/ggml-org/llama.cpp/archive/refs/tags/${encodeURIComponent(release.tag_name)}.zip`,
+        sourceZip,
+        (downloaded, contentLength) => {
+          const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
+          panel.setStatus(`Downloading source... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
+        },
+      )
+      fs.rmSync(sourceDir, { recursive: true, force: true })
+      fs.mkdirSync(sourceDir, { recursive: true })
+      await extractArchive(sourceZip, sourceDir, (line) => panel.addLine(line, "white"))
+      const foundConvertScript = findFile(sourceDir, "convert_hf_to_gguf.py")
+      const foundSourcePath = foundConvertScript ? path.dirname(foundConvertScript) : null
 
       if (foundBinary) {
         const binaryDir = path.dirname(foundBinary)
         freshConfig.llamaCppPath = binaryDir
+        freshConfig.llamaCppSourcePath = foundSourcePath
         freshConfig.llamaCppVersion = release.tag_name
         freshConfig.backend = backend as any
         saveConfig(freshConfig)
@@ -291,6 +328,11 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         panel.addLine("", "white")
         panel.addLine("Installation complete!", "green")
         panel.addLine(`Binary: ${foundBinary}`, "green")
+        if (foundSourcePath) {
+          panel.addLine(`Conversion source: ${foundSourcePath}`, "green")
+        } else {
+          panel.addLine("Warning: convert_hf_to_gguf.py was not found in the source archive", "yellow")
+        }
         panel.addLine(`Version: ${release.tag_name}`, "green")
         panel.addLine(`Backend: ${backend}`, "green")
         panel.setStatus("Installed!")
@@ -303,6 +345,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
       try {
         fs.unlinkSync(tempFile)
+        fs.unlinkSync(sourceZip)
       } catch {}
     } catch (err: any) {
       panel.setStatus("Failed")

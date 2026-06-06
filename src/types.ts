@@ -1,5 +1,6 @@
 export interface QuantEmConfig {
   llamaCppPath: string | null
+  llamaCppSourcePath: string | null
   llamaCppVersion: string | null
   backend: "cpu" | "cuda-12" | "cuda-13" | "vulkan" | null
   sourceModelsDir: string
@@ -94,6 +95,7 @@ export const QUANT_TYPES: QuantType[] = [
 
 export const DEFAULT_CONFIG: QuantEmConfig = {
   llamaCppPath: null,
+  llamaCppSourcePath: null,
   llamaCppVersion: null,
   backend: null,
   sourceModelsDir: "source_models",
