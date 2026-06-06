@@ -96,6 +96,32 @@ describe("quantize screen helpers", () => {
     expect(parseLayerQuantRules("0-3=NOPE", 32)).toMatchObject({ valid: false })
   })
 
+  test("accepts additional llama.cpp quantization types", () => {
+    expect(parseLayerQuantRules("0=Q4_0; 1=Q2_K; 2=MXFP4_MOE", 4)).toMatchObject({
+      valid: true,
+      rules: [
+        { startLayer: 0, endLayer: 0, quantType: "Q4_0" },
+        { startLayer: 1, endLayer: 1, quantType: "Q2_K" },
+        { startLayer: 2, endLayer: 2, quantType: "MXFP4_MOE" },
+      ],
+    })
+
+    const profile = parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Legacy Quant Profile",
+      baseQuantType: "q4_0",
+      rules: [
+        { pattern: "^blk\\.0\\..*$", type: "q5_1" },
+      ],
+    }))
+
+    expect(profile.valid).toBe(true)
+    expect(profile.profile).toMatchObject({
+      baseQuantType: "Q4_0",
+      rules: [{ pattern: "^blk\\.0\\..*$", type: "Q5_1" }],
+    })
+  })
+
   test("builds tensor override file contents and quantize args", () => {
     const rules = parseLayerQuantRules("0=Q8_0; 1-3=Q5_K_M", 4).rules
     expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.(1|2|3)\\..*=Q5_K_M")
