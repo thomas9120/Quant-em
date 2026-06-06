@@ -155,10 +155,10 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   container.add(precisionLabel)
 
   const precisionOptions: SelectOption[] = [
-    { name: "F16", description: "Half precision (recommended)", value: "f16" },
-    { name: "BF16", description: "BFloat16", value: "bf16" },
-    { name: "F32", description: "Full precision", value: "f32" },
-    { name: "Q8_0", description: "8-bit quantized", value: "q8_0" },
+    { name: "F16", description: "General-purpose intermediate for later quantization", value: "f16" },
+    { name: "BF16", description: "Best intermediate when the source safetensors are BF16", value: "bf16" },
+    { name: "F32", description: "Largest, highest-precision intermediate", value: "f32" },
+    { name: "Q8_0", description: "Quantized output when you want to skip a separate quantize pass", value: "q8_0" },
   ]
 
   const precisionSelect = new SelectRenderable(ctx, {
@@ -173,6 +173,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     selectedTextColor: "black",
     selectedDescriptionColor: "black",
     selectedIndex: 0,
+    showDescription: !compactLayout,
   })
   container.add(precisionSelect)
 
