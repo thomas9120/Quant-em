@@ -13,9 +13,19 @@ import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
 import * as fs from "fs"
 
-function findConvertScript(llamaCppPath: string | null): string | null {
+interface ConvertTool {
+  scriptPath: string
+  scriptDir: string
+  ggufPyPath: string | null
+}
+
+function findConvertScript(llamaCppSourcePath: string | null, llamaCppPath: string | null): ConvertTool | null {
   const scriptName = "convert_hf_to_gguf.py"
   const candidates: string[] = []
+
+  if (llamaCppSourcePath) {
+    candidates.push(path.join(resolvePath(llamaCppSourcePath), scriptName))
+  }
 
   if (llamaCppPath) {
     let dir = resolvePath(llamaCppPath)
@@ -31,10 +41,33 @@ function findConvertScript(llamaCppPath: string | null): string | null {
   candidates.push(resolvePath(scriptName))
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate
+    if (fs.existsSync(candidate)) {
+      const scriptDir = path.dirname(candidate)
+      const ggufPyPath = path.join(scriptDir, "gguf-py")
+      return {
+        scriptPath: candidate,
+        scriptDir,
+        ggufPyPath: fs.existsSync(path.join(ggufPyPath, "gguf")) ? ggufPyPath : null,
+      }
+    }
   }
 
   return null
+}
+
+function buildPythonPath(tool: ConvertTool): string | undefined {
+  const entries = [
+    tool.ggufPyPath,
+    process.env.PYTHONPATH,
+  ].filter((entry): entry is string => Boolean(entry))
+
+  return entries.length > 0 ? entries.join(path.delimiter) : undefined
+}
+
+function getRequirementsPath(scriptDir: string): string {
+  const convertRequirements = path.join(scriptDir, "requirements", "requirements-convert_hf_to_gguf.txt")
+  if (fs.existsSync(convertRequirements)) return convertRequirements
+  return path.join(scriptDir, "requirements.txt")
 }
 
 export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
@@ -175,12 +208,19 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
-    const scriptPath = findConvertScript(config.llamaCppPath)
-    if (!scriptPath) {
+    const convertTool = findConvertScript(config.llamaCppSourcePath, config.llamaCppPath)
+    if (!convertTool) {
       panel.setStatus("Failed")
       panel.addLine("Error: convert_hf_to_gguf.py was not found.", "red")
-      panel.addLine("Set llama.cpp path to a full llama.cpp checkout, or place convert_hf_to_gguf.py in this repo's llama_cpp/ folder.", "yellow")
-      panel.addLine("The llama.cpp binary releases include llama-quantize, but may not include the Python conversion script.", "yellow")
+      panel.addLine("Run Setup again, or set llama.cpp source path in Settings to a full llama.cpp checkout.", "yellow")
+      panel.addLine("The converter needs llama.cpp source files such as gguf-py, not just the binary release.", "yellow")
+      return
+    }
+    if (!convertTool.ggufPyPath) {
+      panel.setStatus("Failed")
+      panel.addLine("Error: llama.cpp conversion modules were not found.", "red")
+      panel.addLine("Set llama.cpp source path in Settings to a full llama.cpp checkout that contains gguf-py/.", "yellow")
+      panel.addLine("Copying only convert_hf_to_gguf.py is not enough for GGUF conversion.", "yellow")
       return
     }
 
@@ -193,11 +233,15 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     ensureDir(config.outputModelsDir)
     const outputFile = resolvePath(path.join(config.outputModelsDir, `${selectedDir}-${precision}.gguf`))
 
-    const args = [scriptPath, modelDir, "--outfile", outputFile, "--outtype", precision]
+    const args = [convertTool.scriptPath, modelDir, "--outfile", outputFile, "--outtype", precision]
 
     const result = await runProcess({
       cmd: "python",
       args,
+      cwd: convertTool.scriptDir,
+      env: {
+        PYTHONPATH: buildPythonPath(convertTool) || "",
+      },
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
@@ -214,6 +258,9 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
       panel.setStatus("Failed")
       panel.addLine("", "white")
       panel.addLine(`Conversion failed (exit code ${result.exitCode})`, "red")
+      if (result.stderr.includes("ModuleNotFoundError")) {
+        panel.addLine(`Hint: install conversion dependencies with python -m pip install -r ${getRequirementsPath(convertTool.scriptDir)}`, "yellow")
+      }
     }
   }
 
