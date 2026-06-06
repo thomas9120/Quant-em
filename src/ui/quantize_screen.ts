@@ -256,12 +256,21 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(quantSelect)
 
-  const profileOptions: SelectOption[] = profiles.map((profile) => ({
-    name: profile.name,
-    description: formatProfileSummary(profile.profile),
-    value: profile.path,
-  }))
-  const configuredProfileIndex = Math.max(0, profiles.findIndex((profile) => profile.path === config.lastQuantProfile))
+  const profileOptions: SelectOption[] = [
+    {
+      name: "None",
+      description: "Do not use a JSON profile; use the selected quant type",
+      value: "",
+    },
+    ...profiles.map((profile) => ({
+      name: profile.name,
+      description: formatProfileSummary(profile.profile),
+      value: profile.path,
+    })),
+  ]
+  const configuredProfileIndex = config.lastQuantProfile
+    ? Math.max(0, profileOptions.findIndex((profile) => profile.value === config.lastQuantProfile))
+    : 0
   const profileSelect = new SelectRenderable(ctx, {
     id: "profile-select",
     height: Math.min(Math.max(profileOptions.length + 2, 3), compactLayout ? 3 : 4),
@@ -378,9 +387,13 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const getSelectedMode = () => modeSelect.getSelectedOption()?.value as "standard" | "profile" | undefined
   const getSelectedQuantType = () => quantSelect.getSelectedOption()?.value as string | undefined
   const getSelectedQuantConfig = () => QUANT_TYPES.find((qt) => qt.name === getSelectedQuantType())
-  const getSelectedProfilePath = () => profileSelect.getSelectedOption()?.value as string | undefined
+  const getSelectedProfilePath = () => {
+    const value = profileSelect.getSelectedOption()?.value as string | undefined
+    return value || undefined
+  }
   const getSelectedProfile = () => profiles.find((profile) => profile.path === getSelectedProfilePath())?.profile || null
-  const getEffectiveQuantType = () => getSelectedMode() === "profile"
+  const isUsingProfile = () => getSelectedMode() === "profile" && Boolean(getSelectedProfilePath())
+  const getEffectiveQuantType = () => isUsingProfile()
     ? getSelectedProfile()?.baseQuantType
     : getSelectedQuantType()
 
@@ -389,7 +402,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const quantType = getEffectiveQuantType()
     if (!selectedFile || !quantType) return ""
     const baseName = path.basename(selectedFile, ".gguf")
-    if (getSelectedMode() === "profile") {
+    if (isUsingProfile()) {
       const profile = getSelectedProfile()
       const tag = profile?.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "profile"
       return `${baseName}-${tag}-${quantType}.gguf`
@@ -522,11 +535,6 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       errorText.fg = "red"
       return false
     }
-    if (mode === "profile" && !profile) {
-      errorText.content = "Select a valid JSON profile first"
-      errorText.fg = "red"
-      return false
-    }
     if (/[\\/]/.test(outputInput.value.trim())) {
       errorText.content = "Output filename cannot include folders"
       errorText.fg = "red"
@@ -536,7 +544,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (!layerQuantValidation.valid) return false
 
     const inputFile = resolvePath(path.join(config.sourceModelsDir, selectedFile))
-    const quantConfig = mode === "profile"
+    const quantConfig = isUsingProfile()
       ? QUANT_TYPES.find((qt) => qt.name === profile?.baseQuantType)
       : getSelectedQuantConfig()
     const selectedModel = files.find((f) => f.path === selectedFile)
@@ -555,7 +563,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     panel.addLine(`Input: ${compactLayout ? path.basename(inputFile) : inputFile}`, "white")
     panel.addLine(`Output: ${compactLayout ? path.basename(outputFile) : outputFile}`, willOverwrite ? "yellow" : "white")
-    if (mode === "profile" && profile) {
+    if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "white")
       panel.addLine(`Base type: ${profile.baseQuantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
       panel.addLine(`Tensor rules: ${profile.rules.length}`, "white")
@@ -576,7 +584,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (!compactLayout) {
       panel.addLine(`Estimated output size: ${estimatedOutput}${layerQuantValidation.rules.length > 0 ? " (rough)" : ""}`, "white")
     }
-    if (mode !== "profile" && layerQuantValidation.rules.length > 0) {
+    if (!isUsingProfile() && layerQuantValidation.rules.length > 0) {
       panel.addLine("Advanced mixed quantization should be tested for quality and speed.", "yellow")
     }
     if (!compactLayout) {
@@ -621,12 +629,12 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const selectedFile = getSelectedFile()
     const mode = getSelectedMode()
     const profile = getSelectedProfile()
-    const profilePath = mode === "profile" ? getSelectedProfilePath() || null : null
+    const profilePath = isUsingProfile() ? getSelectedProfilePath() || null : null
     const quantType = getEffectiveQuantType()
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
-    if (!selectedFile || !quantType || !outputFile || !validation.valid || !layerQuantValidation.valid || (mode === "profile" && !profile)) {
+    if (!selectedFile || !quantType || !outputFile || !validation.valid || !layerQuantValidation.valid || (isUsingProfile() && !profile)) {
       previewReady = false
       return
     }
@@ -644,14 +652,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.setStatus("Quantizing...")
     panel.addLine(`Quantizing: ${selectedFile}`, "cyan")
     panel.addLine(`Output: ${outputFile}`, "cyan")
-    if (mode === "profile" && profile) {
+    if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "cyan")
       panel.addLine(`Base type: ${profile.baseQuantType}`, "cyan")
       panel.addLine(`Tensor rules: ${profile.rules.length}`, "cyan")
     } else {
       panel.addLine(`Default type: ${quantType}`, "cyan")
     }
-    if (mode !== "profile" && layerQuantValidation.rules.length > 0) {
+    if (!isUsingProfile() && layerQuantValidation.rules.length > 0) {
       panel.addLine(`Layer overrides: ${formatLayerQuantSummary(layerQuantValidation.rules)}`, "cyan")
     }
     if (validation.layers.length > 0) {
@@ -660,7 +668,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.addLine("", "white")
 
     let tensorTypeFile: string | null = null
-    if (mode === "profile" && profile) {
+    if (isUsingProfile() && profile) {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.profile-tensor-types.txt`)
       fs.writeFileSync(resolvePath(tensorTypeFile), buildProfileTensorTypeFileContent(profile), "utf-8")
@@ -691,7 +699,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
     quantizing = false
     const success = result.exitCode === 0
-    const historyQuantType = mode === "profile" && profile
+    const historyQuantType = isUsingProfile() && profile
       ? `profile: ${profile.name}; base ${profile.baseQuantType}`
       : formatMixedQuantLabel(quantType, layerQuantValidation.rules)
     rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath)
