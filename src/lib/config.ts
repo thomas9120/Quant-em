@@ -1,11 +1,16 @@
 import { DEFAULT_CONFIG, type QuantEmConfig } from "../types"
 import * as path from "path"
 import * as fs from "fs"
+import { fileURLToPath } from "url"
 
 const CONFIG_FILENAME = "quant-em-config.json"
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 
 function resolveProjectRoot(): string {
-  return process.cwd()
+  if (process.env.QUANT_EM_PROJECT_ROOT) {
+    return path.resolve(process.env.QUANT_EM_PROJECT_ROOT)
+  }
+  return PROJECT_ROOT
 }
 
 function getHomeDir(): string | null {
