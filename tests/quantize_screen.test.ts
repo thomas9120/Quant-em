@@ -263,6 +263,27 @@ describe("quantize screen render", () => {
 
     renderer.destroy()
   })
+
+  test("shows an explicit none option for JSON profiles", async () => {
+    fs.mkdirSync(path.join(tempDir, "quant_profiles"), { recursive: true })
+    fs.writeFileSync(path.join(tempDir, "quant_profiles", "profile-one.json"), JSON.stringify({
+      profileVersion: 1,
+      name: "Profile One",
+      baseQuantType: "Q4_K_M",
+      rules: [],
+    }))
+
+    const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({ width: 110, height: 36 })
+    renderer.root.add(createQuantizeScreen(renderer))
+    await renderOnce()
+
+    const frame = captureCharFrame()
+    expect(frame).toContain("JSON quantization profile:")
+    expect(frame).toContain("None")
+    expect(frame).toContain("Profile One")
+
+    renderer.destroy()
+  })
 })
 
 describe("convert screen render", () => {
