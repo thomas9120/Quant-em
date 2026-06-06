@@ -11,6 +11,7 @@ import {
 import {
   buildProfileTensorTypeFileContent,
   parseQuantizationProfileJson,
+  profileHasUnknownQuantTypes,
 } from "../src/lib/quantization_profiles"
 import * as fs from "fs"
 import * as os from "os"
@@ -156,6 +157,42 @@ describe("quantize screen helpers", () => {
       "Q4_K_M",
       "8",
     ])
+  })
+
+  test("allows precision tensor types in profile tensor overrides only", () => {
+    const validation = parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "BF16 Tensor Profile",
+      baseQuantType: "q4_k_m",
+      tokenEmbeddingType: "bf16",
+      outputTensorType: "f16",
+      rules: [
+        { pattern: "^blk\\.0\\.attn_q\\.weight$", type: "bf16" },
+        { pattern: "^blk\\.1\\.attn_k\\.weight$", type: "F32" },
+      ],
+    }))
+
+    expect(validation.valid).toBe(true)
+    expect(validation.profile).toMatchObject({
+      baseQuantType: "Q4_K_M",
+      tokenEmbeddingType: "BF16",
+      outputTensorType: "F16",
+      rules: [
+        { pattern: "^blk\\.0\\.attn_q\\.weight$", type: "BF16" },
+        { pattern: "^blk\\.1\\.attn_k\\.weight$", type: "F32" },
+      ],
+    })
+    expect(buildProfileTensorTypeFileContent(validation.profile!)).toBe(
+      "^blk\\.0\\.attn_q\\.weight$=BF16\n^blk\\.1\\.attn_k\\.weight$=F32",
+    )
+    expect(profileHasUnknownQuantTypes(validation.profile!)).toBe(false)
+
+    expect(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Bad Base Precision",
+      baseQuantType: "BF16",
+      rules: [],
+    })).valid).toBe(false)
   })
 
   test("rejects invalid quantization profiles", () => {

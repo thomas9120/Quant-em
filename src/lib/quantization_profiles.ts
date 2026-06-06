@@ -16,6 +16,8 @@ export interface ProfileFile {
 }
 
 const VALID_QUANT_TYPES = new Set(QUANT_TYPES.map((qt) => qt.name))
+const PRECISION_TENSOR_TYPES = ["F32", "F16", "BF16"] as const
+const VALID_TENSOR_TYPES = new Set([...VALID_QUANT_TYPES, ...PRECISION_TENSOR_TYPES])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -25,6 +27,14 @@ function normalizeProfileQuantType(value: unknown): string | null {
   if (typeof value !== "string") return null
   const normalized = value.trim().toUpperCase()
   return QUANT_TYPES.find((qt) => qt.name.toUpperCase() === normalized)?.name || null
+}
+
+function normalizeProfileTensorType(value: unknown): string | null {
+  const quantType = normalizeProfileQuantType(value)
+  if (quantType) return quantType
+  if (typeof value !== "string") return null
+  const normalized = value.trim().toUpperCase()
+  return PRECISION_TENSOR_TYPES.find((type) => type === normalized) || null
 }
 
 function validateRule(value: unknown, index: number): TensorQuantRule | string {
@@ -38,8 +48,8 @@ function validateRule(value: unknown, index: number): TensorQuantRule | string {
     return `Rule ${index + 1} has an invalid regex pattern`
   }
 
-  const type = normalizeProfileQuantType(value.type)
-  if (!type) return `Rule ${index + 1} has an unknown quant type`
+  const type = normalizeProfileTensorType(value.type)
+  if (!type) return `Rule ${index + 1} has an unknown tensor type`
 
   return {
     pattern: value.pattern,
@@ -68,14 +78,14 @@ export function parseQuantizationProfileJson(raw: string): ProfileValidation {
 
   const tokenEmbeddingType = parsed.tokenEmbeddingType === undefined
     ? undefined
-    : normalizeProfileQuantType(parsed.tokenEmbeddingType)
+    : normalizeProfileTensorType(parsed.tokenEmbeddingType)
   if (parsed.tokenEmbeddingType !== undefined && !tokenEmbeddingType) {
     return { profile: null, valid: false, message: "Profile has an unknown tokenEmbeddingType" }
   }
 
   const outputTensorType = parsed.outputTensorType === undefined
     ? undefined
-    : normalizeProfileQuantType(parsed.outputTensorType)
+    : normalizeProfileTensorType(parsed.outputTensorType)
   if (parsed.outputTensorType !== undefined && !outputTensorType) {
     return { profile: null, valid: false, message: "Profile has an unknown outputTensorType" }
   }
@@ -156,11 +166,11 @@ export function formatProfileSummary(profile: QuantizationProfile): string {
 }
 
 export function profileHasUnknownQuantTypes(profile: QuantizationProfile): boolean {
-  const types = [
-    profile.baseQuantType,
+  if (!VALID_QUANT_TYPES.has(profile.baseQuantType)) return true
+  const tensorTypes = [
     profile.tokenEmbeddingType,
     profile.outputTensorType,
     ...profile.rules.map((rule) => rule.type),
   ].filter((value): value is string => Boolean(value))
-  return types.some((type) => !VALID_QUANT_TYPES.has(type))
+  return tensorTypes.some((type) => !VALID_TENSOR_TYPES.has(type))
 }
