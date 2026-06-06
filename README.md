@@ -83,7 +83,7 @@ Example:
 }
 ```
 
-Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides.
+Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides. Tensor overrides may use the listed quantization types plus precision tensor types `F32`, `F16`, and `BF16`; `baseQuantType` must still be a quantization type such as `Q4_K_M`.
 
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
 

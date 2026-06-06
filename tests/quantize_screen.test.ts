@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
+import { createConvertScreen } from "../src/ui/convert_screen"
 import { createQuantizeScreen, getFailureHints, parsePruneLayers } from "../src/ui/quantize_screen"
 import {
   buildQuantizeArgs,
@@ -10,6 +11,7 @@ import {
 import {
   buildProfileTensorTypeFileContent,
   parseQuantizationProfileJson,
+  profileHasUnknownQuantTypes,
 } from "../src/lib/quantization_profiles"
 import * as fs from "fs"
 import * as os from "os"
@@ -45,6 +47,10 @@ beforeEach(() => {
   fs.mkdirSync(path.join(tempDir, "source_models"), { recursive: true })
   fs.mkdirSync(path.join(tempDir, "output_models"), { recursive: true })
   writeFakeGguf(path.join(tempDir, "source_models", "tiny.gguf"), 7)
+  fs.mkdirSync(path.join(tempDir, "source_models", "gemma-4-31B-it-qat-q4_0-unquantized-heretic"), { recursive: true })
+  fs.mkdirSync(path.join(tempDir, "source_models", "llama-test-model"), { recursive: true })
+  fs.writeFileSync(path.join(tempDir, "source_models", "gemma-4-31B-it-qat-q4_0-unquantized-heretic", "model-00001-of-00002.safetensors"), "")
+  fs.writeFileSync(path.join(tempDir, "source_models", "llama-test-model", "model.safetensors"), "")
   process.env.QUANT_EM_PROJECT_ROOT = tempDir
   process.chdir(tempDir)
 })
@@ -153,6 +159,42 @@ describe("quantize screen helpers", () => {
     ])
   })
 
+  test("allows precision tensor types in profile tensor overrides only", () => {
+    const validation = parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "BF16 Tensor Profile",
+      baseQuantType: "q4_k_m",
+      tokenEmbeddingType: "bf16",
+      outputTensorType: "f16",
+      rules: [
+        { pattern: "^blk\\.0\\.attn_q\\.weight$", type: "bf16" },
+        { pattern: "^blk\\.1\\.attn_k\\.weight$", type: "F32" },
+      ],
+    }))
+
+    expect(validation.valid).toBe(true)
+    expect(validation.profile).toMatchObject({
+      baseQuantType: "Q4_K_M",
+      tokenEmbeddingType: "BF16",
+      outputTensorType: "F16",
+      rules: [
+        { pattern: "^blk\\.0\\.attn_q\\.weight$", type: "BF16" },
+        { pattern: "^blk\\.1\\.attn_k\\.weight$", type: "F32" },
+      ],
+    })
+    expect(buildProfileTensorTypeFileContent(validation.profile!)).toBe(
+      "^blk\\.0\\.attn_q\\.weight$=BF16\n^blk\\.1\\.attn_k\\.weight$=F32",
+    )
+    expect(profileHasUnknownQuantTypes(validation.profile!)).toBe(false)
+
+    expect(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Bad Base Precision",
+      baseQuantType: "BF16",
+      rules: [],
+    })).valid).toBe(false)
+  })
+
   test("rejects invalid quantization profiles", () => {
     expect(parseQuantizationProfileJson("{").valid).toBe(false)
     expect(parseQuantizationProfileJson(JSON.stringify({
@@ -192,6 +234,21 @@ describe("quantize screen render", () => {
     expect(frame).toContain("none")
     expect(frame).toContain("Enter")
     expect(frame).toContain("confirm")
+
+    renderer.destroy()
+  })
+})
+
+describe("convert screen render", () => {
+  test("shows safetensors model directories", async () => {
+    const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({ width: 110, height: 32 })
+    renderer.root.add(createConvertScreen(renderer))
+    await renderOnce()
+
+    const frame = captureCharFrame()
+    expect(frame).toContain("gemma-4-31B-it-qat-q4_0-unquantized-heretic")
+    expect(frame).toContain("llama-test-model")
+    expect(frame).toContain("Output precision:")
 
     renderer.destroy()
   })
