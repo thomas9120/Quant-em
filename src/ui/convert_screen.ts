@@ -11,6 +11,31 @@ import { scanForSafetensorsDirs } from "../lib/file_utils"
 import { runProcess, checkCommandExists } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
+import * as fs from "fs"
+
+function findConvertScript(llamaCppPath: string | null): string | null {
+  const scriptName = "convert_hf_to_gguf.py"
+  const candidates: string[] = []
+
+  if (llamaCppPath) {
+    let dir = resolvePath(llamaCppPath)
+    for (let i = 0; i < 5; i++) {
+      candidates.push(path.join(dir, scriptName))
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+  }
+
+  candidates.push(resolvePath(path.join("llama_cpp", scriptName)))
+  candidates.push(resolvePath(scriptName))
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate
+  }
+
+  return null
+}
 
 export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
@@ -150,9 +175,14 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
-    const scriptPath = config.llamaCppPath
-      ? resolvePath(path.join(config.llamaCppPath, "convert_hf_to_gguf.py"))
-      : "convert_hf_to_gguf.py"
+    const scriptPath = findConvertScript(config.llamaCppPath)
+    if (!scriptPath) {
+      panel.setStatus("Failed")
+      panel.addLine("Error: convert_hf_to_gguf.py was not found.", "red")
+      panel.addLine("Set llama.cpp path to a full llama.cpp checkout, or place convert_hf_to_gguf.py in this repo's llama_cpp/ folder.", "yellow")
+      panel.addLine("The llama.cpp binary releases include llama-quantize, but may not include the Python conversion script.", "yellow")
+      return
+    }
 
     converting = true
     panel.clear()

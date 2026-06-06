@@ -16,6 +16,7 @@ import * as os from "os"
 import * as path from "path"
 
 let originalCwd = process.cwd()
+let originalProjectRoot = process.env.QUANT_EM_PROJECT_ROOT
 let tempDir = ""
 
 function writeFakeGguf(filePath: string, layerCount: number) {
@@ -44,11 +45,17 @@ beforeEach(() => {
   fs.mkdirSync(path.join(tempDir, "source_models"), { recursive: true })
   fs.mkdirSync(path.join(tempDir, "output_models"), { recursive: true })
   writeFakeGguf(path.join(tempDir, "source_models", "tiny.gguf"), 7)
+  process.env.QUANT_EM_PROJECT_ROOT = tempDir
   process.chdir(tempDir)
 })
 
 afterEach(() => {
   process.chdir(originalCwd)
+  if (originalProjectRoot === undefined) {
+    delete process.env.QUANT_EM_PROJECT_ROOT
+  } else {
+    process.env.QUANT_EM_PROJECT_ROOT = originalProjectRoot
+  }
   fs.rmSync(tempDir, { recursive: true, force: true })
 })
 
