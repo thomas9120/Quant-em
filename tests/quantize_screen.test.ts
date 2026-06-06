@@ -97,29 +97,41 @@ describe("quantize screen helpers", () => {
   })
 
   test("accepts additional llama.cpp quantization types", () => {
-    expect(parseLayerQuantRules("0=Q4_0; 1=Q2_K; 2=MXFP4_MOE", 4)).toMatchObject({
+    expect(parseLayerQuantRules("0=Q4_0; 1=Q2_K; 2=NVFP4", 4)).toMatchObject({
       valid: true,
       rules: [
         { startLayer: 0, endLayer: 0, quantType: "Q4_0" },
         { startLayer: 1, endLayer: 1, quantType: "Q2_K" },
-        { startLayer: 2, endLayer: 2, quantType: "MXFP4_MOE" },
+        { startLayer: 2, endLayer: 2, quantType: "NVFP4" },
       ],
     })
+    expect(parseLayerQuantRules("0=COPY", 4)).toMatchObject({ valid: false })
 
     const profile = parseQuantizationProfileJson(JSON.stringify({
       profileVersion: 1,
       name: "Legacy Quant Profile",
-      baseQuantType: "q4_0",
+      baseQuantType: "nvfp4",
       rules: [
         { pattern: "^blk\\.0\\..*$", type: "q5_1" },
+        { pattern: "^blk\\.1\\..*$", type: "bf16" },
       ],
     }))
 
     expect(profile.valid).toBe(true)
     expect(profile.profile).toMatchObject({
-      baseQuantType: "Q4_0",
-      rules: [{ pattern: "^blk\\.0\\..*$", type: "Q5_1" }],
+      baseQuantType: "NVFP4",
+      rules: [
+        { pattern: "^blk\\.0\\..*$", type: "Q5_1" },
+        { pattern: "^blk\\.1\\..*$", type: "BF16" },
+      ],
     })
+
+    expect(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Bad Tensor Copy",
+      baseQuantType: "COPY",
+      rules: [{ pattern: "^blk\\.0\\..*$", type: "COPY" }],
+    })).valid).toBe(false)
   })
 
   test("builds tensor override file contents and quantize args", () => {
@@ -139,6 +151,16 @@ describe("quantize screen helpers", () => {
       "in.gguf",
       "out.gguf",
       "Q4_K_M",
+      "8",
+    ])
+    expect(buildQuantizeArgs("in.gguf", "out.gguf", "IQ2_XXS", 8, [], null, {
+      imatrixFile: "imatrix.gguf",
+    })).toEqual([
+      "--imatrix",
+      "imatrix.gguf",
+      "in.gguf",
+      "out.gguf",
+      "IQ2_XXS",
       "8",
     ])
     expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
@@ -170,6 +192,7 @@ describe("quantize screen helpers", () => {
       allowRequantize: validation.profile!.allowRequantize,
       tokenEmbeddingType: validation.profile!.tokenEmbeddingType,
       outputTensorType: validation.profile!.outputTensorType,
+      imatrixFile: "imatrix.gguf",
     })).toEqual([
       "--allow-requantize",
       "--token-embedding-type",
@@ -178,6 +201,8 @@ describe("quantize screen helpers", () => {
       "Q6_K",
       "--tensor-type-file",
       "profile.txt",
+      "--imatrix",
+      "imatrix.gguf",
       "in.gguf",
       "out.gguf",
       "Q4_K_M",
@@ -215,10 +240,10 @@ describe("quantize screen helpers", () => {
 
     expect(parseQuantizationProfileJson(JSON.stringify({
       profileVersion: 1,
-      name: "Bad Base Precision",
+      name: "Advanced Base Precision",
       baseQuantType: "BF16",
       rules: [],
-    })).valid).toBe(false)
+    })).valid).toBe(true)
   })
 
   test("rejects invalid quantization profiles", () => {
@@ -240,13 +265,15 @@ describe("quantize screen helpers", () => {
 
 describe("quantize screen render", () => {
   test("shows layer count, output filename, and preview confirmation", async () => {
-    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 31 })
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 48 })
     renderer.root.add(createQuantizeScreen(renderer))
     await renderOnce()
 
     let frame = captureCharFrame()
     expect(frame).toContain("Layers: 7 (0-6)")
     expect(frame).toContain("Advanced layer quantization")
+    expect(frame).toContain("Importance matrix")
+    expect(frame).toContain("None")
     expect(frame).toContain("Output filename:")
     expect(frame).toContain("tiny-Q6_K.gguf")
     expect(frame).not.toContain("Selectasource")
@@ -260,6 +287,32 @@ describe("quantize screen render", () => {
     expect(frame).toContain("none")
     expect(frame).toContain("Enter")
     expect(frame).toContain("confirm")
+
+    renderer.destroy()
+  })
+
+  test("shows selected imatrix in preview", async () => {
+    const imatrixPath = path.join(tempDir, "output_models", "imatrix.gguf")
+    writeFakeGguf(imatrixPath, 7)
+    fs.writeFileSync(path.join(tempDir, "quant-em-config.json"), JSON.stringify({
+      lastImatrixFile: imatrixPath,
+    }))
+
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 120, height: 60 })
+    renderer.root.add(createQuantizeScreen(renderer))
+    await renderOnce()
+
+    let frame = captureCharFrame()
+    expect(frame).toContain("Importance matrix")
+    expect(frame).toContain("imatrix.gguf")
+
+    mockInput.pressEnter()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await renderOnce()
+
+    frame = captureCharFrame()
+    expect(frame).toContain("Imatrix:")
+    expect(frame).toContain("imatrix.gguf")
 
     renderer.destroy()
   })

@@ -38,7 +38,7 @@ Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to 
 - Settings: configure llama.cpp binary/source paths, source model directory, output directory, threads, and Hugging Face token.
 - Download Model: download a Hugging Face repo into `source_models/`.
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
-- Quantize Model: choose a GGUF file, select a quantization type, optionally enter comma-separated layer numbers to prune, then start quantization.
+- Quantize Model: choose a GGUF file, select a quantization type, optionally choose an existing imatrix GGUF, optionally enter comma-separated layer numbers to prune, then start quantization.
 
 ### Conversion setup
 
@@ -59,6 +59,16 @@ On the Quantize Model screen, the selected quantization type is the default for 
 ```
 
 Each rule uses `layer` or `start-end=QUANT_TYPE`. Layers are zero-based, must not overlap, and must be within the layer range shown at the top of the screen.
+
+### Importance matrix files
+
+On the Quantize Model screen, the optional importance matrix picker lists `.gguf` files found in `source_models/` and `output_models/`. Choosing one passes it to llama.cpp as:
+
+```bash
+llama-quantize --imatrix imatrix.gguf input.gguf output.gguf IQ2_XXS
+```
+
+Recent llama.cpp versions write imatrix files in GGUF format by default. Quant-em currently consumes existing imatrix files for quantization; generating new calibration matrices with `llama-imatrix` is a separate workflow.
 
 ### JSON quantization profiles
 
@@ -83,7 +93,7 @@ Example:
 }
 ```
 
-Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides. Tensor overrides may use the listed quantization types plus precision tensor types `F32`, `F16`, and `BF16`; `baseQuantType` must still be a quantization type such as `Q4_K_M`.
+Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides. Tensor overrides may use the listed quantization types plus precision tensor types `F32`, `F16`, and `BF16`; `COPY` is only valid as a whole-model quantization choice.
 
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
 

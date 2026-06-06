@@ -21,5 +21,7 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "include": ["index.ts", "src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "llama_cpp", "source_models", "output_models"]
 }

@@ -27,7 +27,7 @@ import { QUANT_TYPES } from "../types"
 import * as path from "path"
 import * as fs from "fs"
 
-type FocusedField = "file" | "mode" | "quant" | "profile" | "rules" | "output" | "prune"
+type FocusedField = "file" | "mode" | "quant" | "profile" | "imatrix" | "rules" | "output" | "prune"
 
 interface PruneValidation {
   layers: string[]
@@ -37,6 +37,11 @@ interface PruneValidation {
 
 function formatTier(tier: string): string {
   return tier.replace(/^\w/, (c) => c.toUpperCase())
+}
+
+function formatOptionalPath(filePath: string | null | undefined, compactLayout: boolean): string {
+  if (!filePath) return "none"
+  return compactLayout ? path.basename(filePath) : filePath
 }
 
 export function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
@@ -137,6 +142,18 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
+  const imatrixFiles = [
+    ...scanForGgufFiles(config.sourceModelsDir).map((file) => ({
+      labelPath: path.join(config.sourceModelsDir, file.path),
+      fullPath: resolvePath(path.join(config.sourceModelsDir, file.path)),
+      size: file.size,
+    })),
+    ...scanForGgufFiles(config.outputModelsDir).map((file) => ({
+      labelPath: path.join(config.outputModelsDir, file.path),
+      fullPath: resolvePath(path.join(config.outputModelsDir, file.path)),
+      size: file.size,
+    })),
+  ].filter((file, index, all) => all.findIndex((candidate) => candidate.fullPath === file.fullPath) === index)
   const profiles = scanForQuantizationProfiles(config.quantProfilesDir)
   const hasProfiles = profiles.length > 0
 
@@ -297,6 +314,46 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     container.add(profileSelect)
   }
 
+  const imatrixLabel = new TextRenderable(ctx, {
+    id: "imatrix-label",
+    content: "Importance matrix (optional):",
+    fg: "white",
+    height: 1,
+    marginTop: 1,
+  })
+  container.add(imatrixLabel)
+
+  const imatrixOptions: SelectOption[] = [
+    {
+      name: "None",
+      description: "Do not pass an imatrix file to llama-quantize",
+      value: "",
+    },
+    ...imatrixFiles.map((file) => ({
+      name: path.basename(file.labelPath),
+      description: compactLayout ? formatFileSize(file.size) : `${file.labelPath} (${formatFileSize(file.size)})`,
+      value: file.fullPath,
+    })),
+  ]
+  const configuredImatrixIndex = config.lastImatrixFile
+    ? Math.max(0, imatrixOptions.findIndex((option) => option.value === config.lastImatrixFile))
+    : 0
+  const imatrixSelect = new SelectRenderable(ctx, {
+    id: "imatrix-select",
+    height: Math.min(Math.max(imatrixOptions.length + 2, 3), compactLayout ? 3 : 4),
+    options: imatrixOptions,
+    backgroundColor: "black",
+    textColor: "white",
+    focusedBackgroundColor: "black",
+    focusedTextColor: "white",
+    selectedBackgroundColor: "cyan",
+    selectedTextColor: "black",
+    selectedDescriptionColor: "black",
+    selectedIndex: configuredImatrixIndex,
+    showDescription: !compactLayout,
+  })
+  container.add(imatrixSelect)
+
   const rulesLabel = new TextRenderable(ctx, {
     id: "layer-quant-label",
     content: "Advanced layer quantization (optional):",
@@ -391,6 +448,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const value = profileSelect.getSelectedOption()?.value as string | undefined
     return value || undefined
   }
+  const getSelectedImatrixFile = () => {
+    const value = imatrixSelect.getSelectedOption()?.value as string | undefined
+    return value || null
+  }
   const getSelectedProfile = () => profiles.find((profile) => profile.path === getSelectedProfilePath())?.profile || null
   const isUsingProfile = () => getSelectedMode() === "profile" && Boolean(getSelectedProfilePath())
   const getEffectiveQuantType = () => isUsingProfile()
@@ -441,7 +502,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.addLine("Recent quantization runs:", "cyan")
     for (const entry of history) {
       const status = entry.success ? "ok" : "failed"
-      panel.addLine(`${status}: ${path.basename(entry.output)} (${entry.quantType})`, entry.success ? "green" : "yellow")
+      const imatrix = entry.imatrixFile ? `; imatrix ${path.basename(entry.imatrixFile)}` : ""
+      panel.addLine(`${status}: ${path.basename(entry.output)} (${entry.quantType}${imatrix})`, entry.success ? "green" : "yellow")
     }
   }
 
@@ -501,6 +563,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     modeSelect.blur()
     quantSelect.blur()
     profileSelect.blur()
+    imatrixSelect.blur()
     rulesInput.blur()
     outputInput.blur()
     pruneInput.blur()
@@ -512,6 +575,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       modeSelect.focus()
     } else if (focusedSelect === "profile" && hasProfiles) {
       profileSelect.focus()
+    } else if (focusedSelect === "imatrix") {
+      imatrixSelect.focus()
     } else if (focusedSelect === "rules") {
       rulesInput.focus()
     } else if (focusedSelect === "output") {
@@ -526,6 +591,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const mode = getSelectedMode()
     const profile = getSelectedProfile()
     const quantType = getEffectiveQuantType()
+    const imatrixFile = getSelectedImatrixFile()
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
@@ -563,6 +629,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     panel.addLine(`Input: ${compactLayout ? path.basename(inputFile) : inputFile}`, "white")
     panel.addLine(`Output: ${compactLayout ? path.basename(outputFile) : outputFile}`, willOverwrite ? "yellow" : "white")
+    panel.addLine(`Imatrix: ${formatOptionalPath(imatrixFile, compactLayout)}`, imatrixFile ? "white" : "gray")
     if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "white")
       panel.addLine(`Base type: ${profile.baseQuantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
@@ -599,15 +666,17 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     return true
   }
 
-  const rememberRun = (selectedFile: string, quantType: string, historyQuantType: string, outputFile: string, pruneLayers: string[], success: boolean, exitCode: number | null, profilePath: string | null) => {
+  const rememberRun = (selectedFile: string, quantType: string, historyQuantType: string, outputFile: string, pruneLayers: string[], success: boolean, exitCode: number | null, profilePath: string | null, imatrixFile: string | null) => {
     config.lastQuantSource = selectedFile
     config.lastQuantType = quantType
     config.lastQuantProfile = profilePath
+    config.lastImatrixFile = imatrixFile
     config.quantizationHistory = [
       {
         input: selectedFile,
         output: outputFile,
         quantType: historyQuantType,
+        imatrixFile,
         prunedLayers: pruneLayers,
         timestamp: new Date().toISOString(),
         success,
@@ -631,6 +700,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const profile = getSelectedProfile()
     const profilePath = isUsingProfile() ? getSelectedProfilePath() || null : null
     const quantType = getEffectiveQuantType()
+    const imatrixFile = getSelectedImatrixFile()
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
@@ -652,6 +722,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     panel.setStatus("Quantizing...")
     panel.addLine(`Quantizing: ${selectedFile}`, "cyan")
     panel.addLine(`Output: ${outputFile}`, "cyan")
+    if (imatrixFile) {
+      panel.addLine(`Imatrix: ${imatrixFile}`, "cyan")
+    }
     if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "cyan")
       panel.addLine(`Base type: ${profile.baseQuantType}`, "cyan")
@@ -681,6 +754,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       allowRequantize: profile?.allowRequantize,
       tokenEmbeddingType: profile?.tokenEmbeddingType,
       outputTensorType: profile?.outputTensorType,
+      imatrixFile,
     })
 
     const result = await runProcess({
@@ -702,7 +776,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const historyQuantType = isUsingProfile() && profile
       ? `profile: ${profile.name}; base ${profile.baseQuantType}`
       : formatMixedQuantLabel(quantType, layerQuantValidation.rules)
-    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath)
+    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath, imatrixFile)
 
     if (success) {
       panel.setStatus("Complete!")
@@ -734,8 +808,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
         : focusedSelect === "mode"
         ? "quant"
         : focusedSelect === "quant"
-          ? (hasProfiles ? "profile" : "rules")
+          ? (hasProfiles ? "profile" : "imatrix")
           : focusedSelect === "profile"
+          ? "imatrix"
+          : focusedSelect === "imatrix"
           ? "rules"
           : focusedSelect === "rules"
           ? "output"
@@ -746,7 +822,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
-    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "profile")) {
+    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "profile" || focusedSelect === "imatrix")) {
       process.nextTick(() => updateDerivedFields())
     }
 

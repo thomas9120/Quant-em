@@ -1,5 +1,7 @@
 import { QUANT_TYPES, type LayerQuantRule } from "../types"
 
+const INVALID_TENSOR_OVERRIDE_TYPES = new Set(["COPY"])
+
 export interface LayerQuantValidation {
   rules: LayerQuantRule[]
   valid: boolean
@@ -9,6 +11,7 @@ export interface LayerQuantValidation {
 export function normalizeQuantType(value: string): string | null {
   const normalized = value.trim().toUpperCase()
   const match = QUANT_TYPES.find((qt) => qt.name.toUpperCase() === normalized)
+  if (match && INVALID_TENSOR_OVERRIDE_TYPES.has(match.name)) return null
   return match?.name || null
 }
 
@@ -120,6 +123,7 @@ export function buildQuantizeArgs(
     allowRequantize?: boolean
     tokenEmbeddingType?: string
     outputTensorType?: string
+    imatrixFile?: string | null
   } = {},
 ): string[] {
   const args: string[] = []
@@ -137,6 +141,9 @@ export function buildQuantizeArgs(
   }
   if (tensorTypeFile) {
     args.push("--tensor-type-file", tensorTypeFile)
+  }
+  if (options.imatrixFile) {
+    args.push("--imatrix", options.imatrixFile)
   }
   args.push(inputFile, outputFile, defaultQuantType, String(threads))
   return args
