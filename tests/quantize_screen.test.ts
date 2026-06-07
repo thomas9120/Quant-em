@@ -291,6 +291,27 @@ describe("quantize screen render", () => {
     renderer.destroy()
   })
 
+  test("updates generated output filename when quant type changes", async () => {
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 48 })
+    renderer.root.add(createQuantizeScreen(renderer))
+    await renderOnce()
+
+    let frame = captureCharFrame()
+    expect(frame).toContain("tiny-Q6_K.gguf")
+
+    mockInput.pressTab()
+    mockInput.pressTab()
+    mockInput.pressArrow("down")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await renderOnce()
+
+    frame = captureCharFrame()
+    expect(frame).toContain("tiny-Q1_0.gguf")
+    expect(frame).not.toContain("tiny-IQ1_S.gguf")
+
+    renderer.destroy()
+  })
+
   test("shows selected imatrix in preview", async () => {
     const imatrixPath = path.join(tempDir, "output_models", "imatrix.gguf")
     writeFakeGguf(imatrixPath, 7)

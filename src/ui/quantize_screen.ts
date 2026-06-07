@@ -3,6 +3,7 @@ import {
   BoxRenderable,
   TextRenderable,
   SelectRenderable,
+  SelectRenderableEvents,
   InputRenderable,
   type SelectOption,
 } from "@opentui/core"
@@ -255,6 +256,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     description: `${qt.description} | approx ${Math.round(qt.estimatedSizeRatio * 100)}% of source`,
     value: qt.name,
   }))
+  const defaultQuantIndex = QUANT_TYPES.findIndex((qt) => qt.name === "Q6_K")
   const configuredQuantIndex = QUANT_TYPES.findIndex((qt) => qt.name === config.lastQuantType)
 
   const quantSelect = new SelectRenderable(ctx, {
@@ -268,7 +270,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     selectedBackgroundColor: "cyan",
     selectedTextColor: "black",
     selectedDescriptionColor: "black",
-    selectedIndex: configuredQuantIndex >= 0 ? configuredQuantIndex : 2,
+    selectedIndex: configuredQuantIndex >= 0 ? configuredQuantIndex : Math.max(0, defaultQuantIndex),
     showDescription: !compactLayout,
   })
   container.add(quantSelect)
@@ -842,6 +844,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     outputEdited = true
     resetPreview()
   })
+  fileSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
+  modeSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
+  quantSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
+  profileSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
+  imatrixSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
   rulesInput.on("input", () => {
     updateLayerQuantValidation()
     resetPreview()
