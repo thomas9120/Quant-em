@@ -582,6 +582,13 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     return validation
   }
 
+  const updateDefaultQuantHint = () => {
+    defaultQuantLabel.content = isUsingProfile()
+      ? "Default quantization type (ignored; JSON profile base type is used):"
+      : "Default quantization type:"
+    defaultQuantLabel.fg = isUsingProfile() ? "gray" : "white"
+  }
+
   const buildStandardTensorTypeFileContent = (quantType: string, rules: ReturnType<typeof parseLayerQuantRules>["rules"]) => {
     const sections: string[] = []
     if (getSelectedEmbeddingMode() === "match-default") {
@@ -604,6 +611,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const updateDerivedFields = () => {
     updateLayerCount()
+    updateDefaultQuantHint()
     refreshOutputName()
     updatePruneValidation()
     updateLayerQuantValidation()
@@ -611,6 +619,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   }
 
   updateLayerCount()
+  updateDefaultQuantHint()
   refreshOutputName()
   updatePruneValidation()
   updateLayerQuantValidation()

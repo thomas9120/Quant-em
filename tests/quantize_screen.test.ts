@@ -368,7 +368,7 @@ describe("quantize screen helpers", () => {
 
 describe("quantize screen render", () => {
   test("shows layer count, output filename, and preview confirmation", async () => {
-    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 48 })
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 60 })
     renderer.root.add(createQuantizeScreen(renderer))
     await renderOnce()
 
@@ -458,6 +458,30 @@ describe("quantize screen render", () => {
     expect(frame).toContain("JSON quantization profile:")
     expect(frame).toContain("None")
     expect(frame).toContain("Profile One")
+
+    renderer.destroy()
+  })
+
+  test("shows default quant hint when JSON profile overrides it", async () => {
+    fs.mkdirSync(path.join(tempDir, "quant_profiles"), { recursive: true })
+    fs.writeFileSync(path.join(tempDir, "quant_profiles", "profile-one.json"), JSON.stringify({
+      profileVersion: 1,
+      name: "Profile One",
+      baseQuantType: "Q4_K_M",
+      rules: [],
+    }))
+    fs.writeFileSync(path.join(tempDir, "quant-em-config.json"), JSON.stringify({
+      lastQuantProfile: "profile-one.json",
+      lastQuantType: "Q6_K",
+    }))
+
+    const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({ width: 120, height: 48 })
+    renderer.root.add(createQuantizeScreen(renderer))
+    await renderOnce()
+
+    const frame = captureCharFrame()
+    expect(frame).toContain("Default quantization type (ignored; JSON profile base type is used):")
+    expect(frame).toContain("tiny-profile-one-Q4_K_M.gguf")
 
     renderer.destroy()
   })
