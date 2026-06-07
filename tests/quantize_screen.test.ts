@@ -13,6 +13,10 @@ import {
   parseQuantizationProfileJson,
   profileHasUnknownQuantTypes,
 } from "../src/lib/quantization_profiles"
+import {
+  extractProfileFromDump,
+  parseGgufDumpJson,
+} from "../src/lib/gguf_profile_extractor"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -244,6 +248,66 @@ describe("quantize screen helpers", () => {
       baseQuantType: "BF16",
       rules: [],
     })).valid).toBe(true)
+  })
+
+  test("allows low-level llama.cpp tensor override types in profiles", () => {
+    const validation = parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "MXFP4 Tensor Overrides",
+      baseQuantType: "MXFP4_MOE",
+      rules: [
+        { pattern: "^blk\\.0\\.ffn_gate_exp\\.weight$", type: "MXFP4" },
+        { pattern: "^blk\\.1\\.attn_q\\.weight$", type: "Q4_K" },
+      ],
+    }))
+
+    expect(validation.valid).toBe(true)
+    expect(validation.profile).toMatchObject({
+      baseQuantType: "MXFP4_MOE",
+      rules: [
+        { pattern: "^blk\\.0\\.ffn_gate_exp\\.weight$", type: "MXFP4" },
+        { pattern: "^blk\\.1\\.attn_q\\.weight$", type: "Q4_K" },
+      ],
+    })
+    expect(profileHasUnknownQuantTypes(validation.profile!)).toBe(false)
+  })
+
+  test("extracts a compact reusable profile from gguf dump json", () => {
+    const dump = parseGgufDumpJson(JSON.stringify({
+      filename: "model-Q4_K_M.gguf",
+      metadata: {
+        "general.file_type": { value: 15 },
+      },
+      tensors: {
+        "token_embd.weight": { type: "Q8_0" },
+        "blk.0.attn_q.weight": { type: "Q4_K" },
+        "blk.1.attn_q.weight": { type: "Q4_K" },
+        "blk.0.attn_k.weight": { type: "Q4_K_M" },
+        "blk.1.attn_k.weight": { type: "Q4_K_M" },
+        "blk.0.ffn_gate_exp.weight": { type: "MXFP4" },
+        "output.weight": { type: "Q6_K" },
+        "unknown.weight": { type: "NOPE" },
+      },
+    }))
+
+    const result = extractProfileFromDump(dump, "fallback.gguf")
+
+    expect(result.profile).toMatchObject({
+      name: "model-Q4_K_M extracted",
+      baseQuantType: "Q4_K_M",
+      tokenEmbeddingType: "Q8_0",
+      outputTensorType: "Q6_K",
+      source: {
+        kind: "reference-gguf",
+        fileName: "model-Q4_K_M.gguf",
+      },
+    })
+    expect(result.profile.rules).toEqual([
+      { pattern: "^blk\\.(0)\\.ffn_gate_exp\\.weight$", type: "MXFP4" },
+      { pattern: "^blk\\.(0|1)\\.attn_q\\.weight$", type: "Q4_K" },
+    ])
+    expect(result.skippedTypes).toEqual({ NOPE: 1 })
+    expect(parseQuantizationProfileJson(JSON.stringify(result.profile)).valid).toBe(true)
   })
 
   test("rejects invalid quantization profiles", () => {

@@ -11,6 +11,7 @@ import { pushScreen } from "./navigator"
 import { createQuantizeScreen } from "./quantize_screen"
 import { createDownloadScreen } from "./download_screen"
 import { createConvertScreen } from "./convert_screen"
+import { createAnalyzeProfileScreen } from "./analyze_profile_screen"
 import { createSetupScreen } from "./setup_screen"
 import { createSettingsScreen } from "./settings_screen"
 
@@ -31,6 +32,7 @@ export function createMainMenuScreen(renderer: CliRenderer): BoxRenderable {
     { name: "Download Model", description: "Download models from HuggingFace", value: "download" },
     { name: "Convert to GGUF", description: "Convert safetensors to GGUF format", value: "convert" },
     { name: "Quantize Model", description: "Quantize a GGUF model", value: "quantize" },
+    { name: "Analyze GGUF Profile", description: "Extract a reusable quantization profile from a GGUF", value: "analyze-profile" },
     { name: "Setup", description: "Install/manage llama.cpp", value: "setup" },
     { name: "Settings", description: "Configure paths and defaults", value: "settings" },
     { name: "Exit", description: "Quit Quant-em", value: "exit" },
@@ -64,6 +66,9 @@ export function createMainMenuScreen(renderer: CliRenderer): BoxRenderable {
         break
       case "quantize":
         pushScreen(createQuantizeScreen)
+        break
+      case "analyze-profile":
+        pushScreen(createAnalyzeProfileScreen)
         break
       case "setup":
         pushScreen(createSetupScreen)
