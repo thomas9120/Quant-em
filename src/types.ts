@@ -11,6 +11,7 @@ export interface QuantEmConfig {
   lastQuantType: string | null
   lastQuantSource: string | null
   lastQuantProfile: string | null
+  lastImatrixFile: string | null
   quantizationHistory: QuantizationHistoryEntry[]
 }
 
@@ -29,7 +30,7 @@ export interface ModelFile {
 
 export interface QuantType {
   name: string
-  tier: "recommended" | "smallest" | "balanced" | "higher"
+  tier: "recommended" | "smallest" | "balanced" | "higher" | "advanced"
   description: string
   estimatedSizeRatio: number
 }
@@ -64,6 +65,7 @@ export interface QuantizationHistoryEntry {
   input: string
   output: string
   quantType: string
+  imatrixFile?: string | null
   prunedLayers: string[]
   timestamp: string
   success: boolean
@@ -98,10 +100,15 @@ export const QUANT_TYPES: QuantType[] = [
   { name: "Q4_1", tier: "balanced", description: "Legacy 4-bit quantization, slightly larger", estimatedSizeRatio: 0.34 },
   { name: "Q4_K_S", tier: "higher", description: "Good quality", estimatedSizeRatio: 0.29 },
   { name: "MXFP4_MOE", tier: "higher", description: "MXFP4 quantization for MoE models", estimatedSizeRatio: 0.31 },
+  { name: "NVFP4", tier: "higher", description: "NVFP4 quantization for supported models", estimatedSizeRatio: 0.31 },
   { name: "Q5_0", tier: "higher", description: "Legacy 5-bit quantization", estimatedSizeRatio: 0.37 },
   { name: "Q5_1", tier: "higher", description: "Legacy 5-bit quantization, slightly larger", estimatedSizeRatio: 0.4 },
   { name: "Q5_K_S", tier: "higher", description: "High quality", estimatedSizeRatio: 0.36 },
   { name: "Q8_0", tier: "higher", description: "Highest quality (near FP16)", estimatedSizeRatio: 0.55 },
+  { name: "F16", tier: "advanced", description: "Mostly F16 output; large, near-original precision", estimatedSizeRatio: 1 },
+  { name: "BF16", tier: "advanced", description: "Mostly BF16 output; large, near-original precision", estimatedSizeRatio: 1 },
+  { name: "F32", tier: "advanced", description: "All F32 output; very large", estimatedSizeRatio: 2 },
+  { name: "COPY", tier: "advanced", description: "Copy tensors without quantizing", estimatedSizeRatio: 1 },
 ]
 
 export const DEFAULT_CONFIG: QuantEmConfig = {
@@ -117,5 +124,6 @@ export const DEFAULT_CONFIG: QuantEmConfig = {
   lastQuantType: null,
   lastQuantSource: null,
   lastQuantProfile: null,
+  lastImatrixFile: null,
   quantizationHistory: [],
 }

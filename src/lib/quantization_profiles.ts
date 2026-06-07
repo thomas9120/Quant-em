@@ -17,7 +17,11 @@ export interface ProfileFile {
 
 const VALID_QUANT_TYPES = new Set(QUANT_TYPES.map((qt) => qt.name))
 const PRECISION_TENSOR_TYPES = ["F32", "F16", "BF16"] as const
-const VALID_TENSOR_TYPES = new Set([...VALID_QUANT_TYPES, ...PRECISION_TENSOR_TYPES])
+const INVALID_TENSOR_OVERRIDE_TYPES = new Set(["COPY"])
+const VALID_TENSOR_TYPES = new Set([
+  ...QUANT_TYPES.map((qt) => qt.name).filter((name) => !INVALID_TENSOR_OVERRIDE_TYPES.has(name)),
+  ...PRECISION_TENSOR_TYPES,
+])
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -31,7 +35,7 @@ function normalizeProfileQuantType(value: unknown): string | null {
 
 function normalizeProfileTensorType(value: unknown): string | null {
   const quantType = normalizeProfileQuantType(value)
-  if (quantType) return quantType
+  if (quantType && !INVALID_TENSOR_OVERRIDE_TYPES.has(quantType)) return quantType
   if (typeof value !== "string") return null
   const normalized = value.trim().toUpperCase()
   return PRECISION_TENSOR_TYPES.find((type) => type === normalized) || null
