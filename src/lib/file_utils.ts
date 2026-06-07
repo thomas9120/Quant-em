@@ -72,7 +72,7 @@ export function scanForFiles(dir: string, extensions?: string[]): ModelFile[] {
 }
 
 export function scanForGgufFiles(dir: string): ModelFile[] {
-  return scanForFiles(dir, [".gguf"])
+  return scanForFiles(dir).filter((file) => file.type === "gguf")
 }
 
 export function scanForSafetensorsDirs(dir: string): string[] {

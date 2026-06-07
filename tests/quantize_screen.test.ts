@@ -14,6 +14,7 @@ import {
   parseQuantizationProfileJson,
   profileHasUnknownQuantTypes,
 } from "../src/lib/quantization_profiles"
+import { scanForGgufFiles } from "../src/lib/file_utils"
 import {
   extractProfileFromDump,
   parseGgufDumpJson,
@@ -71,6 +72,16 @@ afterEach(() => {
 })
 
 describe("quantize screen helpers", () => {
+  test("finds GGUF files with Hugging Face cache-style suffixes", () => {
+    writeFakeGguf(path.join(tempDir, "source_models", "imatrix_unsloth.gguf_file"), 7)
+    fs.writeFileSync(path.join(tempDir, "source_models", "notes.txt"), "not a gguf")
+
+    expect(scanForGgufFiles("source_models").map((file) => file.name)).toEqual([
+      "imatrix_unsloth.gguf_file",
+      "tiny.gguf",
+    ])
+  })
+
   test("validates prune layers with layer-count bounds", () => {
     expect(parsePruneLayers("", 7)).toMatchObject({ valid: true, layers: [] })
     expect(parsePruneLayers("0, 2, 6", 7)).toMatchObject({ valid: true, layers: ["0", "2", "6"] })
