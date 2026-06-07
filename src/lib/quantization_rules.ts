@@ -15,6 +15,27 @@ export function normalizeQuantType(value: string): string | null {
   return match?.name || null
 }
 
+export function toTensorOverrideType(quantType: string): string {
+  switch (quantType) {
+    case "Q2_K_S":
+      return "Q2_K"
+    case "Q3_K_S":
+    case "Q3_K_M":
+    case "Q3_K_L":
+      return "Q3_K"
+    case "Q4_K_S":
+    case "Q4_K_M":
+      return "Q4_K"
+    case "Q5_K_S":
+    case "Q5_K_M":
+      return "Q5_K"
+    case "MXFP4_MOE":
+      return "MXFP4"
+    default:
+      return quantType
+  }
+}
+
 export function parseLayerQuantRules(value: string, layerCount: number | null): LayerQuantValidation {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -107,7 +128,7 @@ export function buildTensorTypeFileContent(rules: LayerQuantRule[]): string {
       const pattern = rule.startLayer === rule.endLayer
         ? `blk\\.${rule.startLayer}\\..*`
         : `blk\\.(${rangeToAlternation(rule.startLayer, rule.endLayer)})\\..*`
-      return `${pattern}=${rule.quantType}`
+      return `${pattern}=${toTensorOverrideType(rule.quantType)}`
     })
     .join("\n")
 }
@@ -131,10 +152,10 @@ export function buildQuantizeArgs(
     args.push("--allow-requantize")
   }
   if (options.tokenEmbeddingType) {
-    args.push("--token-embedding-type", options.tokenEmbeddingType)
+    args.push("--token-embedding-type", toTensorOverrideType(options.tokenEmbeddingType))
   }
   if (options.outputTensorType) {
-    args.push("--output-tensor-type", options.outputTensorType)
+    args.push("--output-tensor-type", toTensorOverrideType(options.outputTensorType))
   }
   if (pruneLayers.length > 0) {
     args.push("--prune-layers", pruneLayers.join(","))

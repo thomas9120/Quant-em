@@ -1,4 +1,5 @@
 import { QUANT_TYPES, type QuantizationProfile, type TensorQuantRule } from "../types"
+import { toTensorOverrideType } from "./quantization_rules"
 import { resolvePath } from "./config"
 import * as fs from "fs"
 import * as path from "path"
@@ -168,7 +169,7 @@ export function scanForQuantizationProfiles(dir: string): ProfileFile[] {
 }
 
 export function buildProfileTensorTypeFileContent(profile: QuantizationProfile): string {
-  return profile.rules.map((rule) => `${rule.pattern}=${rule.type}`).join("\n")
+  return profile.rules.map((rule) => `${rule.pattern}=${toTensorOverrideType(rule.type)}`).join("\n")
 }
 
 export function formatProfileSummary(profile: QuantizationProfile): string {

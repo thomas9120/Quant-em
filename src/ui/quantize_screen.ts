@@ -18,6 +18,7 @@ import {
   formatLayerQuantSummary,
   formatMixedQuantLabel,
   parseLayerQuantRules,
+  toTensorOverrideType,
 } from "../lib/quantization_rules"
 import {
   buildProfileTensorTypeFileContent,
@@ -277,7 +278,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const embeddingLabel = new TextRenderable(ctx, {
     id: "embedding-label",
-    content: "Token embedding handling (standard mode):",
+    content: "Token embedding handling:",
     fg: "white",
     height: 1,
     marginTop: 1,
@@ -292,7 +293,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     },
     {
       name: "Match selected quant",
-      description: "Force token_embd.weight to the selected default quant type",
+      description: "Force token_embd.weight to the active base quant type",
       value: "match-default",
     },
   ]
@@ -584,10 +585,20 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const buildStandardTensorTypeFileContent = (quantType: string, rules: ReturnType<typeof parseLayerQuantRules>["rules"]) => {
     const sections: string[] = []
     if (getSelectedEmbeddingMode() === "match-default") {
-      sections.push(`^token_embd\\.weight$=${quantType}`)
+      sections.push(`^token_embd\\.weight$=${toTensorOverrideType(quantType)}`)
     }
     const layerContent = buildTensorTypeFileContent(rules)
     if (layerContent) sections.push(layerContent)
+    return sections.join("\n")
+  }
+
+  const buildProfileTensorTypeContent = (profile: NonNullable<ReturnType<typeof getSelectedProfile>>, quantType: string) => {
+    const sections: string[] = []
+    if (getSelectedEmbeddingMode() === "match-default") {
+      sections.push(`^token_embd\\.weight$=${toTensorOverrideType(quantType)}`)
+    }
+    const profileContent = buildProfileTensorTypeFileContent(profile)
+    if (profileContent) sections.push(profileContent)
     return sections.join("\n")
   }
 
@@ -691,6 +702,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "white")
       panel.addLine(`Base type: ${profile.baseQuantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
+      panel.addLine(`Token embeddings: ${getSelectedEmbeddingMode() === "match-default" ? `force ${quantType}` : (profile.tokenEmbeddingType || "profile/default")}`, "white")
       panel.addLine(`Tensor rules: ${profile.rules.length}`, "white")
     } else {
       panel.addLine(`Default type: ${quantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
@@ -803,7 +815,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (isUsingProfile() && profile) {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.profile-tensor-types.txt`)
-      fs.writeFileSync(resolvePath(tensorTypeFile), buildProfileTensorTypeFileContent(profile), "utf-8")
+      fs.writeFileSync(resolvePath(tensorTypeFile), buildProfileTensorTypeContent(profile, quantType), "utf-8")
     } else if (layerQuantValidation.rules.length > 0 || getSelectedEmbeddingMode() === "match-default") {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.tensor-types.txt`)
@@ -811,7 +823,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     const args = buildQuantizeArgs(inputFile, outputFile, quantType, config.defaultThreads, validation.layers, tensorTypeFile ? resolvePath(tensorTypeFile) : null, {
       allowRequantize: profile?.allowRequantize,
-      tokenEmbeddingType: profile?.tokenEmbeddingType,
+      tokenEmbeddingType: getSelectedEmbeddingMode() === "match-default" ? quantType : profile?.tokenEmbeddingType,
       outputTensorType: profile?.outputTensorType,
       imatrixFile,
     })
