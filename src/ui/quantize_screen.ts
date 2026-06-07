@@ -28,7 +28,7 @@ import { QUANT_TYPES } from "../types"
 import * as path from "path"
 import * as fs from "fs"
 
-type FocusedField = "file" | "mode" | "quant" | "profile" | "imatrix" | "rules" | "output" | "prune"
+type FocusedField = "file" | "mode" | "quant" | "embedding" | "profile" | "imatrix" | "rules" | "output" | "prune"
 
 interface PruneValidation {
   layers: string[]
@@ -275,6 +275,43 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(quantSelect)
 
+  const embeddingLabel = new TextRenderable(ctx, {
+    id: "embedding-label",
+    content: "Token embedding handling (standard mode):",
+    fg: "white",
+    height: 1,
+    marginTop: 1,
+  })
+  container.add(embeddingLabel)
+
+  const embeddingOptions: SelectOption[] = [
+    {
+      name: "llama.cpp default",
+      description: "Let llama.cpp choose token embedding precision for quality",
+      value: "default",
+    },
+    {
+      name: "Match selected quant",
+      description: "Force token_embd.weight to the selected default quant type",
+      value: "match-default",
+    },
+  ]
+  const embeddingSelect = new SelectRenderable(ctx, {
+    id: "embedding-select",
+    height: compactLayout ? 3 : 4,
+    options: embeddingOptions,
+    backgroundColor: "black",
+    textColor: "white",
+    focusedBackgroundColor: "black",
+    focusedTextColor: "white",
+    selectedBackgroundColor: "cyan",
+    selectedTextColor: "black",
+    selectedDescriptionColor: "black",
+    selectedIndex: 0,
+    showDescription: !compactLayout,
+  })
+  container.add(embeddingSelect)
+
   const profileOptions: SelectOption[] = [
     {
       name: "None",
@@ -445,6 +482,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const getSelectedFile = () => fileSelect.getSelectedOption()?.value as string | undefined
   const getSelectedMode = () => modeSelect.getSelectedOption()?.value as "standard" | "profile" | undefined
   const getSelectedQuantType = () => quantSelect.getSelectedOption()?.value as string | undefined
+  const getSelectedEmbeddingMode = () => embeddingSelect.getSelectedOption()?.value as "default" | "match-default" | undefined
   const getSelectedQuantConfig = () => QUANT_TYPES.find((qt) => qt.name === getSelectedQuantType())
   const getSelectedProfilePath = () => {
     const value = profileSelect.getSelectedOption()?.value as string | undefined
@@ -543,6 +581,16 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     return validation
   }
 
+  const buildStandardTensorTypeFileContent = (quantType: string, rules: ReturnType<typeof parseLayerQuantRules>["rules"]) => {
+    const sections: string[] = []
+    if (getSelectedEmbeddingMode() === "match-default") {
+      sections.push(`^token_embd\\.weight$=${quantType}`)
+    }
+    const layerContent = buildTensorTypeFileContent(rules)
+    if (layerContent) sections.push(layerContent)
+    return sections.join("\n")
+  }
+
   const updateDerivedFields = () => {
     updateLayerCount()
     refreshOutputName()
@@ -564,6 +612,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     fileSelect.blur()
     modeSelect.blur()
     quantSelect.blur()
+    embeddingSelect.blur()
     profileSelect.blur()
     imatrixSelect.blur()
     rulesInput.blur()
@@ -573,6 +622,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       fileSelect.focus()
     } else if (focusedSelect === "quant") {
       quantSelect.focus()
+    } else if (focusedSelect === "embedding") {
+      embeddingSelect.focus()
     } else if (focusedSelect === "mode") {
       modeSelect.focus()
     } else if (focusedSelect === "profile" && hasProfiles) {
@@ -610,6 +661,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     if (!validation.valid) return false
     if (!layerQuantValidation.valid) return false
+    if (!isUsingProfile() && getSelectedEmbeddingMode() === "match-default" && quantType === "COPY") {
+      errorText.content = "Token embedding override cannot use COPY"
+      errorText.fg = "red"
+      return false
+    }
 
     const inputFile = resolvePath(path.join(config.sourceModelsDir, selectedFile))
     const quantConfig = isUsingProfile()
@@ -638,6 +694,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       panel.addLine(`Tensor rules: ${profile.rules.length}`, "white")
     } else {
       panel.addLine(`Default type: ${quantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
+      panel.addLine(`Token embeddings: ${getSelectedEmbeddingMode() === "match-default" ? `force ${quantType}` : "llama.cpp default"}`, "white")
     }
     if (!compactLayout) {
       panel.addLine(`Layer overrides: ${layerSummary}`, "white")
@@ -747,10 +804,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.profile-tensor-types.txt`)
       fs.writeFileSync(resolvePath(tensorTypeFile), buildProfileTensorTypeFileContent(profile), "utf-8")
-    } else if (layerQuantValidation.rules.length > 0) {
+    } else if (layerQuantValidation.rules.length > 0 || getSelectedEmbeddingMode() === "match-default") {
       const outputBase = path.basename(outputFile, path.extname(outputFile))
       tensorTypeFile = path.join(config.outputModelsDir, `${outputBase}.tensor-types.txt`)
-      fs.writeFileSync(resolvePath(tensorTypeFile), buildTensorTypeFileContent(layerQuantValidation.rules), "utf-8")
+      fs.writeFileSync(resolvePath(tensorTypeFile), buildStandardTensorTypeFileContent(quantType, layerQuantValidation.rules), "utf-8")
     }
     const args = buildQuantizeArgs(inputFile, outputFile, quantType, config.defaultThreads, validation.layers, tensorTypeFile ? resolvePath(tensorTypeFile) : null, {
       allowRequantize: profile?.allowRequantize,
@@ -810,6 +867,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
         : focusedSelect === "mode"
         ? "quant"
         : focusedSelect === "quant"
+          ? "embedding"
+        : focusedSelect === "embedding"
           ? (hasProfiles ? "profile" : "imatrix")
           : focusedSelect === "profile"
           ? "imatrix"
@@ -824,7 +883,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       return
     }
 
-    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "profile" || focusedSelect === "imatrix")) {
+    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "embedding" || focusedSelect === "profile" || focusedSelect === "imatrix")) {
       process.nextTick(() => updateDerivedFields())
     }
 
@@ -847,6 +906,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   fileSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
   modeSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
   quantSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
+  embeddingSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
   profileSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
   imatrixSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
   rulesInput.on("input", () => {
