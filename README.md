@@ -95,6 +95,10 @@ Example:
 
 Put profile files in `quant_profiles/`, then choose `JSON profile` on the Quantize Model screen. The profile's `baseQuantType` becomes the final quant type, while `tokenEmbeddingType`, `outputTensorType`, and `rules` become llama.cpp tensor overrides. Tensor overrides may use the listed quantization types plus precision tensor types `F32`, `F16`, and `BF16`; `COPY` is only valid as a whole-model quantization choice.
 
+### Extracting profiles from GGUF files
+
+Use `Analyze GGUF Profile` from the main menu to inspect an existing GGUF and save a compact JSON profile based on its tensor quantization layout. Extracted profiles are intended for quantizing the same base model or another GGUF with matching tensor names. They preserve observable tensor storage types only; imatrix/calibration data and the original quantization recipe cannot be recovered from a GGUF.
+
 By default, source files are read from `source_models/` and generated models are written to `output_models/`.
 
 ## Screenshot
