@@ -7,6 +7,7 @@ import {
   buildTensorTypeFileContent,
   formatMixedQuantLabel,
   parseLayerQuantRules,
+  toTensorOverrideType,
 } from "../src/lib/quantization_rules"
 import {
   buildProfileTensorTypeFileContent,
@@ -129,6 +130,12 @@ describe("quantize screen helpers", () => {
         { pattern: "^blk\\.1\\..*$", type: "BF16" },
       ],
     })
+    expect(buildProfileTensorTypeFileContent(parseQuantizationProfileJson(JSON.stringify({
+      profileVersion: 1,
+      name: "Recipe Tensor Types",
+      baseQuantType: "Q4_K_M",
+      rules: [{ pattern: "^blk\\.0\\..*$", type: "Q4_K_M" }],
+    })).profile!)).toBe("^blk\\.0\\..*$=Q4_K")
 
     expect(parseQuantizationProfileJson(JSON.stringify({
       profileVersion: 1,
@@ -140,7 +147,7 @@ describe("quantize screen helpers", () => {
 
   test("builds tensor override file contents and quantize args", () => {
     const rules = parseLayerQuantRules("0=Q8_0; 1-3=Q5_K_M", 4).rules
-    expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.(1|2|3)\\..*=Q5_K_M")
+    expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.(1|2|3)\\..*=Q5_K")
     expect(buildQuantizeArgs("in.gguf", "out.gguf", "Q4_K_M", 8, [], null)).toEqual([
       "in.gguf",
       "out.gguf",
@@ -168,6 +175,27 @@ describe("quantize screen helpers", () => {
       "8",
     ])
     expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
+  })
+
+  test("maps whole-model recipe names to llama.cpp tensor override types", () => {
+    expect(toTensorOverrideType("Q4_K_M")).toBe("Q4_K")
+    expect(toTensorOverrideType("Q4_K_S")).toBe("Q4_K")
+    expect(toTensorOverrideType("Q5_K_M")).toBe("Q5_K")
+    expect(toTensorOverrideType("Q3_K_L")).toBe("Q3_K")
+    expect(toTensorOverrideType("MXFP4_MOE")).toBe("MXFP4")
+    expect(buildQuantizeArgs("in.gguf", "out.gguf", "Q4_K_M", 8, [], null, {
+      tokenEmbeddingType: "Q4_K_M",
+      outputTensorType: "Q5_K_M",
+    })).toEqual([
+      "--token-embedding-type",
+      "Q4_K",
+      "--output-tensor-type",
+      "Q5_K",
+      "in.gguf",
+      "out.gguf",
+      "Q4_K_M",
+      "8",
+    ])
   })
 
   test("validates quantization profiles and builds profile args", () => {
