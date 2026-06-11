@@ -29,7 +29,7 @@ import { QUANT_TYPES } from "../types"
 import * as path from "path"
 import * as fs from "fs"
 
-type FocusedField = "file" | "mode" | "quant" | "embedding" | "profile" | "imatrix" | "rules" | "output" | "prune"
+type FocusedField = "file" | "mode" | "quant" | "embedding" | "profile" | "imatrix" | "rules" | "output" | "split" | "prune"
 
 interface PruneValidation {
   layers: string[]
@@ -44,6 +44,10 @@ function formatTier(tier: string): string {
 function formatOptionalPath(filePath: string | null | undefined, compactLayout: boolean): string {
   if (!filePath) return "none"
   return compactLayout ? path.basename(filePath) : filePath
+}
+
+function isSplitGgufFirstShard(filePath: string): boolean {
+  return /-\d{5}-of-\d{5}\.gguf$/i.test(path.basename(filePath)) && /-00001-of-\d{5}\.gguf$/i.test(path.basename(filePath))
 }
 
 export function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
@@ -438,6 +442,43 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(outputInput)
 
+  const splitLabel = new TextRenderable(ctx, {
+    id: "split-label",
+    content: "Split output handling:",
+    fg: "white",
+    height: 1,
+    marginTop: 1,
+  })
+  container.add(splitLabel)
+
+  const splitOptions: SelectOption[] = [
+    {
+      name: "Merge to one GGUF",
+      description: "Write a single quantized output file",
+      value: "merge",
+    },
+    {
+      name: "Keep input split shards",
+      description: "Pass --keep-split to llama-quantize",
+      value: "keep-split",
+    },
+  ]
+  const splitSelect = new SelectRenderable(ctx, {
+    id: "split-select",
+    height: compactLayout ? 3 : 4,
+    options: splitOptions,
+    backgroundColor: "black",
+    textColor: "white",
+    focusedBackgroundColor: "black",
+    focusedTextColor: "white",
+    selectedBackgroundColor: "cyan",
+    selectedTextColor: "black",
+    selectedDescriptionColor: "black",
+    selectedIndex: 0,
+    showDescription: !compactLayout,
+  })
+  container.add(splitSelect)
+
   const pruneLabel = new TextRenderable(ctx, {
     id: "prune-label",
     content: "Prune layers (optional):",
@@ -484,6 +525,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   const getSelectedMode = () => modeSelect.getSelectedOption()?.value as "standard" | "profile" | undefined
   const getSelectedQuantType = () => quantSelect.getSelectedOption()?.value as string | undefined
   const getSelectedEmbeddingMode = () => embeddingSelect.getSelectedOption()?.value as "default" | "match-default" | undefined
+  const getSelectedSplitMode = () => splitSelect.getSelectedOption()?.value as "merge" | "keep-split" | undefined
+  const shouldKeepSplit = () => getSelectedSplitMode() === "keep-split"
   const getSelectedQuantConfig = () => QUANT_TYPES.find((qt) => qt.name === getSelectedQuantType())
   const getSelectedProfilePath = () => {
     const value = profileSelect.getSelectedOption()?.value as string | undefined
@@ -637,6 +680,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     imatrixSelect.blur()
     rulesInput.blur()
     outputInput.blur()
+    splitSelect.blur()
     pruneInput.blur()
     if (focusedSelect === "file") {
       fileSelect.focus()
@@ -654,6 +698,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       rulesInput.focus()
     } else if (focusedSelect === "output") {
       outputInput.focus()
+    } else if (focusedSelect === "split") {
+      splitSelect.focus()
     } else {
       pruneInput.focus()
     }
@@ -668,6 +714,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
+    const keepSplit = shouldKeepSplit()
 
     if (!selectedFile || !quantType || !outputFile) {
       errorText.content = "Select a model, default quant type, and output filename first"
@@ -688,6 +735,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     const inputFile = resolvePath(path.join(config.sourceModelsDir, selectedFile))
+    const splitInput = isSplitGgufFirstShard(selectedFile)
     const quantConfig = isUsingProfile()
       ? QUANT_TYPES.find((qt) => qt.name === profile?.baseQuantType)
       : getSelectedQuantConfig()
@@ -707,7 +755,6 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     panel.addLine(`Input: ${compactLayout ? path.basename(inputFile) : inputFile}`, "white")
     panel.addLine(`Output: ${compactLayout ? path.basename(outputFile) : outputFile}`, willOverwrite ? "yellow" : "white")
-    panel.addLine(`Imatrix: ${formatOptionalPath(imatrixFile, compactLayout)}`, imatrixFile ? "white" : "gray")
     if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "white")
       panel.addLine(`Base type: ${profile.baseQuantType} (${formatTier(quantConfig?.tier || "unknown")})`, "white")
@@ -725,6 +772,8 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       panel.addLine(`Layers: ${cachedLayerCount !== null ? `${cachedLayerCount} (0-${cachedLayerCount - 1})` : "unknown"}`, "white")
     }
     panel.addLine(`Prune: ${validation.layers.length > 0 ? validation.layers.join(", ") : "none"}`, "white")
+    panel.addLine(`Imatrix: ${formatOptionalPath(imatrixFile, compactLayout)}`, imatrixFile ? "white" : "gray")
+    panel.addLine(`Split output: ${keepSplit ? "keep input shards" : "merge to one GGUF"}`, keepSplit ? "white" : "gray")
     if (compactLayout) {
       panel.addLine(`Layer overrides: ${layerSummary}`, "white")
     }
@@ -733,6 +782,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     if (!isUsingProfile() && layerQuantValidation.rules.length > 0) {
       panel.addLine("Advanced mixed quantization should be tested for quality and speed.", "yellow")
+    }
+    if (keepSplit && !splitInput) {
+      panel.addLine("Warning: keep-split is intended for split GGUF inputs like model-00001-of-00005.gguf.", "yellow")
     }
     if (!compactLayout) {
       if (willOverwrite) {
@@ -784,6 +836,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const outputFile = getOutputFile()
     const validation = updatePruneValidation()
     const layerQuantValidation = updateLayerQuantValidation()
+    const keepSplit = shouldKeepSplit()
     if (!selectedFile || !quantType || !outputFile || !validation.valid || !layerQuantValidation.valid || (isUsingProfile() && !profile)) {
       previewReady = false
       return
@@ -805,6 +858,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     if (imatrixFile) {
       panel.addLine(`Imatrix: ${imatrixFile}`, "cyan")
     }
+    panel.addLine(`Split output: ${keepSplit ? "keep input shards" : "merge to one GGUF"}`, keepSplit ? "cyan" : "gray")
     if (isUsingProfile() && profile) {
       panel.addLine(`Profile: ${profile.name}`, "cyan")
       panel.addLine(`Base type: ${profile.baseQuantType}`, "cyan")
@@ -832,6 +886,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     const args = buildQuantizeArgs(inputFile, outputFile, quantType, config.defaultThreads, validation.layers, tensorTypeFile ? resolvePath(tensorTypeFile) : null, {
       allowRequantize: profile?.allowRequantize,
+      keepSplit,
       tokenEmbeddingType: getSelectedEmbeddingMode() === "match-default" ? quantType : profile?.tokenEmbeddingType,
       outputTensorType: profile?.outputTensorType,
       imatrixFile,
@@ -898,13 +953,15 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
           : focusedSelect === "rules"
           ? "output"
           : focusedSelect === "output"
+          ? "split"
+          : focusedSelect === "split"
             ? "prune"
             : "file"
       focusSelectedList()
       return
     }
 
-    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "embedding" || focusedSelect === "profile" || focusedSelect === "imatrix")) {
+    if ((key.name === "up" || key.name === "down") && (focusedSelect === "file" || focusedSelect === "mode" || focusedSelect === "quant" || focusedSelect === "embedding" || focusedSelect === "profile" || focusedSelect === "imatrix" || focusedSelect === "split")) {
       process.nextTick(() => updateDerivedFields())
     }
 
@@ -930,6 +987,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   embeddingSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
   profileSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => updateDerivedFields())
   imatrixSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
+  splitSelect.on(SelectRenderableEvents.SELECTION_CHANGED, () => resetPreview())
   rulesInput.on("input", () => {
     updateLayerQuantValidation()
     resetPreview()
