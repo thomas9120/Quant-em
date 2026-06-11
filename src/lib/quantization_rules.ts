@@ -142,6 +142,7 @@ export function buildQuantizeArgs(
   tensorTypeFile: string | null,
   options: {
     allowRequantize?: boolean
+    keepSplit?: boolean
     tokenEmbeddingType?: string
     outputTensorType?: string
     imatrixFile?: string | null
@@ -150,6 +151,9 @@ export function buildQuantizeArgs(
   const args: string[] = []
   if (options.allowRequantize) {
     args.push("--allow-requantize")
+  }
+  if (options.keepSplit) {
+    args.push("--keep-split")
   }
   if (options.tokenEmbeddingType) {
     args.push("--token-embedding-type", toTensorOverrideType(options.tokenEmbeddingType))

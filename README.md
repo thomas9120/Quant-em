@@ -38,7 +38,7 @@ Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to 
 - Settings: configure llama.cpp binary/source paths, source model directory, output directory, threads, and Hugging Face token.
 - Download Model: download a Hugging Face repo into `source_models/`.
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
-- Quantize Model: choose a GGUF file, select a quantization type, optionally choose an existing imatrix GGUF, optionally enter comma-separated layer numbers to prune, then start quantization.
+- Quantize Model: choose a GGUF file, select a quantization type, optionally choose an existing imatrix GGUF, optionally keep split GGUF outputs sharded, optionally enter comma-separated layer numbers to prune, then start quantization.
 
 ### Conversion setup
 
@@ -69,6 +69,16 @@ llama-quantize --imatrix imatrix.gguf input.gguf output.gguf IQ2_XXS
 ```
 
 Recent llama.cpp versions write imatrix files in GGUF format by default. Quant-em currently consumes existing imatrix files for quantization; generating new calibration matrices with `llama-imatrix` is a separate workflow.
+
+### Split GGUF inputs
+
+If your source model is already split into GGUF shards such as `model-00001-of-00005.gguf`, select the first shard on the Quantize Model screen. By default, Quant-em asks `llama-quantize` to merge the result into one output GGUF. Set Split output handling to Keep input split shards to pass:
+
+```bash
+llama-quantize --keep-split model-00001-of-00005.gguf model-Q4_K_M.gguf Q4_K_M
+```
+
+The keep-split option is intended for split GGUF inputs. Hugging Face `.safetensors` shards should stay together in one model directory and go through Convert to GGUF first; they do not need to be manually combined.
 
 ### JSON quantization profiles
 

@@ -185,6 +185,15 @@ describe("quantize screen helpers", () => {
       "IQ2_XXS",
       "8",
     ])
+    expect(buildQuantizeArgs("model-00001-of-00005.gguf", "out.gguf", "Q4_K_M", 8, [], null, {
+      keepSplit: true,
+    })).toEqual([
+      "--keep-split",
+      "model-00001-of-00005.gguf",
+      "out.gguf",
+      "Q4_K_M",
+      "8",
+    ])
     expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
   })
 
@@ -378,6 +387,7 @@ describe("quantize screen render", () => {
     expect(frame).toContain("Importance matrix")
     expect(frame).toContain("None")
     expect(frame).toContain("Output filename:")
+    expect(frame).toContain("Split output handling:")
     expect(frame).toContain("tiny-Q6_K.gguf")
     expect(frame).not.toContain("Selectasource")
 
@@ -388,8 +398,33 @@ describe("quantize screen render", () => {
     frame = captureCharFrame()
     expect(frame).toContain("Layer")
     expect(frame).toContain("none")
+    expect(frame).toContain("Split output:")
+    expect(frame).toContain("merge to one GGUF")
     expect(frame).toContain("Enter")
     expect(frame).toContain("confirm")
+
+    renderer.destroy()
+  })
+
+  test("warns when keep-split is selected for a non-split input", async () => {
+    const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 120, height: 60 })
+    renderer.root.add(createQuantizeScreen(renderer))
+    await renderOnce()
+
+    for (let i = 0; i < 7; i++) {
+      mockInput.pressTab()
+    }
+    mockInput.pressArrow("down")
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await renderOnce()
+
+    mockInput.pressEnter()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await renderOnce()
+
+    const frame = captureCharFrame()
+    expect(frame).toContain("keep input shards")
+    expect(frame).toContain("keep-split is intended for split GGUF inputs")
 
     renderer.destroy()
   })
