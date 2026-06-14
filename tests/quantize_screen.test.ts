@@ -23,6 +23,8 @@ import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
 
+const renderDescribe = process.env.QUANT_EM_RENDER_TESTS === "1" ? describe : describe.skip
+
 let originalCwd = process.cwd()
 let originalProjectRoot = process.env.QUANT_EM_PROJECT_ROOT
 let tempDir = ""
@@ -375,7 +377,7 @@ describe("quantize screen helpers", () => {
   })
 })
 
-describe("quantize screen render", () => {
+renderDescribe("quantize screen render", () => {
   test("shows layer count, output filename, and preview confirmation", async () => {
     const { renderer, mockInput, renderOnce, captureCharFrame } = await createTestRenderer({ width: 100, height: 60 })
     renderer.root.add(createQuantizeScreen(renderer))
@@ -522,7 +524,7 @@ describe("quantize screen render", () => {
   })
 })
 
-describe("convert screen render", () => {
+renderDescribe("convert screen render", () => {
   test("shows safetensors model directories", async () => {
     const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({ width: 110, height: 32 })
     renderer.root.add(createConvertScreen(renderer))
