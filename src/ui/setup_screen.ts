@@ -8,6 +8,7 @@ import {
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, saveConfig } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
+import { findAssetForBackend, type GitHubRelease } from "../lib/setup_release"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
 import * as fs from "fs"
@@ -104,17 +105,6 @@ async function extractArchive(archivePath: string, destination: string, onOutput
   }
 }
 
-interface ReleaseAsset {
-  name: string
-  browser_download_url: string
-  size: number
-}
-
-interface GitHubRelease {
-  tag_name: string
-  assets: ReleaseAsset[]
-}
-
 async function getLatestRelease(): Promise<GitHubRelease | null> {
   try {
     const resp = await fetch("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", {
@@ -125,38 +115,6 @@ async function getLatestRelease(): Promise<GitHubRelease | null> {
   } catch {
     return null
   }
-}
-
-function findAssetForBackend(release: GitHubRelease, backend: string): ReleaseAsset | null {
-  const platformPatterns: Record<string, string[]> = {
-    "win32-x64": ["-bin-win-"],
-    "linux-x64": ["-bin-ubuntu-"],
-    "darwin-arm64": ["-bin-macos-arm64"],
-  }
-
-  const backendPatterns: Record<string, string[]> = {
-    cpu: ["-cpu-", "-ubuntu-x64.", "-macos-arm64."],
-    "cuda-12": ["-cuda-12."],
-    "cuda-13": ["-cuda-13."],
-    vulkan: ["-vulkan-"],
-  }
-
-  const platformKey = `${PLATFORM}-${ARCH}`
-  const platPats = platformPatterns[platformKey] || []
-  const backPats = backendPatterns[backend] || []
-
-  for (const asset of release.assets) {
-    const name = asset.name.toLowerCase()
-    const isLlamaBinary = name.startsWith("llama-") && name.includes("-bin-")
-    const matchesPlatform = platPats.some((p) => name.includes(p))
-    const matchesBackend = backPats.some((p) => name.includes(p))
-    const matchesArchive = PLATFORM === "win32" ? name.endsWith(".zip") : name.endsWith(".tar.gz")
-    if (isLlamaBinary && matchesPlatform && matchesBackend && matchesArchive) {
-      return asset
-    }
-  }
-
-  return null
 }
 
 export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
