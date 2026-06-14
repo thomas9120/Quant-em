@@ -46,3 +46,10 @@ n1
 CC.txt
 CC.json
 /quant_profiles
+
+# CodeGraph index
+.codegraph/
+
+# project notes
+progress_log.md
+quantization_improvements.md
