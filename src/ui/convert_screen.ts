@@ -9,66 +9,9 @@ import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
 import { scanForSafetensorsDirs } from "../lib/file_utils"
 import { runProcess, checkCommandExists } from "../lib/process_runner"
+import { buildPythonPath, findConvertScript, getRequirementsPath } from "../lib/convert_tool"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
-import * as fs from "fs"
-
-interface ConvertTool {
-  scriptPath: string
-  scriptDir: string
-  ggufPyPath: string | null
-}
-
-function findConvertScript(llamaCppSourcePath: string | null, llamaCppPath: string | null): ConvertTool | null {
-  const scriptName = "convert_hf_to_gguf.py"
-  const candidates: string[] = []
-
-  if (llamaCppSourcePath) {
-    candidates.push(path.join(resolvePath(llamaCppSourcePath), scriptName))
-  }
-
-  if (llamaCppPath) {
-    let dir = resolvePath(llamaCppPath)
-    for (let i = 0; i < 5; i++) {
-      candidates.push(path.join(dir, scriptName))
-      const parent = path.dirname(dir)
-      if (parent === dir) break
-      dir = parent
-    }
-  }
-
-  candidates.push(resolvePath(path.join("llama_cpp", scriptName)))
-  candidates.push(resolvePath(scriptName))
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      const scriptDir = path.dirname(candidate)
-      const ggufPyPath = path.join(scriptDir, "gguf-py")
-      return {
-        scriptPath: candidate,
-        scriptDir,
-        ggufPyPath: fs.existsSync(path.join(ggufPyPath, "gguf")) ? ggufPyPath : null,
-      }
-    }
-  }
-
-  return null
-}
-
-function buildPythonPath(tool: ConvertTool): string | undefined {
-  const entries = [
-    tool.ggufPyPath,
-    process.env.PYTHONPATH,
-  ].filter((entry): entry is string => Boolean(entry))
-
-  return entries.length > 0 ? entries.join(path.delimiter) : undefined
-}
-
-function getRequirementsPath(scriptDir: string): string {
-  const convertRequirements = path.join(scriptDir, "requirements", "requirements-convert_hf_to_gguf.txt")
-  if (fs.existsSync(convertRequirements)) return convertRequirements
-  return path.join(scriptDir, "requirements.txt")
-}
 
 export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
