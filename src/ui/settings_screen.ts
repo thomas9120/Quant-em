@@ -3,6 +3,7 @@ import {
   BoxRenderable,
   TextRenderable,
   InputRenderable,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, saveConfig } from "../lib/config"
@@ -98,7 +99,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   }
 
   let confirmEscapeActive = false
-  let confirmEscapeHandler: ((k: any) => void) | null = null
+  let confirmEscapeHandler: ((k: KeyEvent) => void) | null = null
 
   const removeConfirmEscape = () => {
     if (confirmEscapeHandler) {
@@ -125,11 +126,20 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     config.llamaCppSourcePath = values.llamaCppSourcePath || null
     config.sourceModelsDir = values.sourceModelsDir || "source_models"
     config.outputModelsDir = values.outputModelsDir || "output_models"
-    config.defaultThreads = parseInt(values.defaultThreads || "") || 8
+
+    const parsedThreads = parseInt(values.defaultThreads || "", 10)
+    if (!Number.isFinite(parsedThreads) || parsedThreads < 1) {
+      statusText.content = "Default threads must be a positive integer (1 or greater)."
+      statusText.fg = "red"
+      container.requestRender()
+      return
+    }
+    config.defaultThreads = Math.min(parsedThreads, 1024)
     config.hfToken = values.hfToken || null
 
     saveConfig(config)
     statusText.content = "Settings saved!"
+    statusText.fg = "green"
     container.requestRender()
 
     for (let i = 0; i < fields.length; i++) {
@@ -145,7 +155,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     input.on("enter", () => save())
   }
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
       if (confirmEscapeActive) {
         removeConfirmEscape()
@@ -156,7 +166,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
         confirmText.content = "Press Enter to discard changes, or Esc to keep editing."
         confirmText.requestRender()
         confirmEscapeActive = true
-        confirmEscapeHandler = (k: any) => {
+        confirmEscapeHandler = (k: KeyEvent) => {
           if (k.name === "enter") {
             removeConfirmEscape()
             popScreen()

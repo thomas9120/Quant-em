@@ -6,10 +6,11 @@ import {
   SelectRenderableEvents,
   InputRenderable,
   type SelectOption,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, saveConfig, resolvePath, ensureDir } from "../lib/config"
-import { scanForGgufFiles, formatFileSize, getGgufLayerCount } from "../lib/file_utils"
+import { scanForGgufFiles, formatFileSize, getGgufLayerCount, isSafeFileName, collectGgufFiles } from "../lib/file_utils"
 import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import {
@@ -148,23 +149,12 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
-  const imatrixFiles = [
-    ...scanForGgufFiles(config.sourceModelsDir).map((file) => ({
-      labelPath: path.join(config.sourceModelsDir, file.path),
-      fullPath: resolvePath(path.join(config.sourceModelsDir, file.path)),
-      size: file.size,
-    })),
-    ...scanForGgufFiles(config.outputModelsDir).map((file) => ({
-      labelPath: path.join(config.outputModelsDir, file.path),
-      fullPath: resolvePath(path.join(config.outputModelsDir, file.path)),
-      size: file.size,
-    })),
-  ].filter((file, index, all) => all.findIndex((candidate) => candidate.fullPath === file.fullPath) === index)
+  const imatrixFiles = collectGgufFiles(config.sourceModelsDir, config.outputModelsDir)
   const profiles = scanForQuantizationProfiles(config.quantProfilesDir)
   const hasProfiles = profiles.length > 0
 
   if (files.length === 0) {
-    const onKey = (key: any) => {
+    const onKey = (key: KeyEvent) => {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
@@ -707,7 +697,6 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const showPreview = (): boolean => {
     const selectedFile = getSelectedFile()
-    const mode = getSelectedMode()
     const profile = getSelectedProfile()
     const quantType = getEffectiveQuantType()
     const imatrixFile = getSelectedImatrixFile()
@@ -723,6 +712,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
     if (/[\\/]/.test(outputInput.value.trim())) {
       errorText.content = "Output filename cannot include folders"
+      errorText.fg = "red"
+      return false
+    }
+    if (!isSafeFileName(outputInput.value.trim())) {
+      errorText.content = "Output filename contains invalid characters or a reserved name"
       errorText.fg = "red"
       return false
     }
@@ -828,7 +822,6 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     const selectedFile = getSelectedFile()
-    const mode = getSelectedMode()
     const profile = getSelectedProfile()
     const profilePath = isUsingProfile() ? getSelectedProfilePath() || null : null
     const quantType = getEffectiveQuantType()
@@ -931,7 +924,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
       popScreen()
       return

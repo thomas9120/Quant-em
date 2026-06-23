@@ -1,4 +1,3 @@
-import type { CliRenderer } from "@opentui/core"
 import { BoxRenderable, TextRenderable, type RenderContext } from "@opentui/core"
 import { loadConfig } from "../../lib/config"
 import { checkCommandExists } from "../../lib/process_runner"
@@ -23,19 +22,26 @@ export function createStatusBar(ctx: RenderContext): BoxRenderable {
 
   const rightText = new TextRenderable(ctx, {
     id: "status-right",
-    content: "",
+    content: "checking...",
     fg: "gray",
   })
 
   container.add(leftText)
   container.add(rightText)
 
-  updateStatusBar(ctx, container)
+  void updateStatusBar(ctx, container).catch((err: unknown) => {
+    const right = container.getRenderable("status-right") as TextRenderable | undefined
+    if (right) {
+      right.content = "status unavailable"
+      container.requestRender()
+    }
+    void err
+  })
 
   return container
 }
 
-export async function updateStatusBar(ctx: RenderContext, bar: BoxRenderable) {
+export async function updateStatusBar(_ctx: RenderContext, bar: BoxRenderable) {
   const config = loadConfig()
   const parts: string[] = []
 

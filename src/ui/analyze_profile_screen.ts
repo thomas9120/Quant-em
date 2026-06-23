@@ -4,10 +4,11 @@ import {
   TextRenderable,
   SelectRenderable,
   type SelectOption,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
-import { loadConfig, resolvePath } from "../lib/config"
-import { scanForGgufFiles, formatFileSize } from "../lib/file_utils"
+import { loadConfig } from "../lib/config"
+import { formatFileSize, collectGgufFiles } from "../lib/file_utils"
 import { createProcessPanel } from "./components/process_panel"
 import {
   analyzeGgufFile,
@@ -24,28 +25,11 @@ function formatTypeCounts(typeCounts: Record<string, number>): string {
     .join("  ")
 }
 
-function collectGgufFiles(config: ReturnType<typeof loadConfig>) {
-  return [
-    ...scanForGgufFiles(config.sourceModelsDir).map((file) => ({
-      labelPath: path.join(config.sourceModelsDir, file.path),
-      fullPath: resolvePath(path.join(config.sourceModelsDir, file.path)),
-      name: file.name,
-      size: file.size,
-    })),
-    ...scanForGgufFiles(config.outputModelsDir).map((file) => ({
-      labelPath: path.join(config.outputModelsDir, file.path),
-      fullPath: resolvePath(path.join(config.outputModelsDir, file.path)),
-      name: file.name,
-      size: file.size,
-    })),
-  ].filter((file, index, all) => all.findIndex((candidate) => candidate.fullPath === file.fullPath) === index)
-}
-
 export function createAnalyzeProfileScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
   const config = loadConfig()
   const compactLayout = renderer.height < 30
-  const files = collectGgufFiles(config)
+  const files = collectGgufFiles(config.sourceModelsDir, config.outputModelsDir)
   const fileListHeight = compactLayout ? 5 : 8
 
   let analyzing = false
@@ -82,7 +66,7 @@ export function createAnalyzeProfileScreen(renderer: CliRenderer): BoxRenderable
       fg: "gray",
     })
     container.add(hint)
-    const onKey = (key: any) => {
+    const onKey = (key: KeyEvent) => {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
@@ -169,10 +153,10 @@ export function createAnalyzeProfileScreen(renderer: CliRenderer): BoxRenderable
       const result = await analyzeGgufFile(selected, config)
       latestResult = result
       renderPreview(result, selected)
-    } catch (err: any) {
+    } catch (err: unknown) {
       panel.clear()
       panel.setStatus("Analyze failed")
-      panel.addLine(err?.message || String(err), "red")
+      panel.addLine(err instanceof Error ? err.message : String(err), "red")
       panel.addLine("Check Setup/Settings for llama.cpp source availability, then try again.", "yellow")
     } finally {
       analyzing = false
@@ -185,7 +169,7 @@ export function createAnalyzeProfileScreen(renderer: CliRenderer): BoxRenderable
     renderPreview(latestResult, latestFile)
   }
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
       popScreen()
       return

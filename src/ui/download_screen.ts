@@ -2,16 +2,17 @@ import type { CliRenderer } from "@opentui/core"
 import {
   BoxRenderable,
   TextRenderable,
-  SelectRenderable,
   InputRenderable,
-  type SelectOption,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { getHfCommand } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
+import { sanitizeDirName, removeDirIfEmpty } from "../lib/file_utils"
 import * as path from "path"
+import * as fs from "fs"
 
 export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
@@ -94,9 +95,12 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     panel.setStatus("Downloading...")
     panel.addLine(`Downloading from: ${repoId}`, "cyan")
 
-    const repoName = repoId.split("/").pop() || repoId.replace("/", "-")
+    const repoName = sanitizeDirName(repoId.split("/").pop() || repoId.replace("/", "-"))
     const localDir = resolvePath(path.join(config.sourceModelsDir, repoName))
-    ensureDir(path.join(config.sourceModelsDir, repoName))
+    const localDirExistedBefore = fs.existsSync(localDir)
+    if (!localDirExistedBefore) {
+      ensureDir(path.join(config.sourceModelsDir, repoName))
+    }
 
     const args = ["download", repoId, "--local-dir", localDir]
     const include = includeInput.value.trim()
@@ -127,6 +131,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       panel.addLine("Download complete!", "green")
       panel.addLine(`Files saved to: ${localDir}`, "green")
     } else {
+      if (!localDirExistedBefore) {
+        removeDirIfEmpty(path.join(config.sourceModelsDir, repoName))
+      }
       panel.setStatus("Failed")
       panel.addLine("", "white")
       panel.addLine(`Download failed (exit code ${result.exitCode})`, "red")
@@ -139,7 +146,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   repoInput.on("enter", () => startDownload())
   includeInput.on("enter", () => startDownload())
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") popScreen()
   }
   renderer.keyInput.on("keypress", onKey)
