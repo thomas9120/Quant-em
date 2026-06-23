@@ -4,15 +4,23 @@ import {
   TextRenderable,
   SelectRenderable,
   type SelectOption,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, saveConfig } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { findAssetForBackend, type GitHubRelease } from "../lib/setup_release"
 import { createProcessPanel } from "./components/process_panel"
+import type { QuantEmConfig } from "../types"
 import * as path from "path"
 import * as fs from "fs"
 import * as os from "os"
+
+type Backend = NonNullable<QuantEmConfig["backend"]>
+const BACKEND_VALUES: ReadonlySet<Backend> = new Set<Backend>(["cpu", "cuda-12", "cuda-13", "vulkan"])
+function isBackend(value: string): value is Backend {
+  return BACKEND_VALUES.has(value as Backend)
+}
 
 const PLATFORM = process.platform
 const ARCH = process.arch
@@ -198,8 +206,9 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
   const startInstall = async () => {
     if (installing) return
 
-    const backend = backendSelect.getSelectedOption()?.value as string
-    if (!backend) return
+    const backendValue = backendSelect.getSelectedOption()?.value as string
+    if (!backendValue || !isBackend(backendValue)) return
+    const backend: Backend = backendValue
 
     const freshConfig = loadConfig()
 
@@ -280,7 +289,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         freshConfig.llamaCppPath = binaryDir
         freshConfig.llamaCppSourcePath = foundSourcePath
         freshConfig.llamaCppVersion = release.tag_name
-        freshConfig.backend = backend as any
+        freshConfig.backend = backend
         saveConfig(freshConfig)
 
         panel.addLine("", "white")
@@ -305,15 +314,15 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         fs.unlinkSync(tempFile)
         fs.unlinkSync(sourceZip)
       } catch {}
-    } catch (err: any) {
+    } catch (err: unknown) {
       panel.setStatus("Failed")
-      panel.addLine(`Error: ${err.message}`, "red")
+      panel.addLine(`Error: ${err instanceof Error ? err.message : String(err)}`, "red")
     }
 
     installing = false
   }
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
       popScreen()
       return

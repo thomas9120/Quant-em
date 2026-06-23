@@ -127,7 +127,7 @@ export function buildTensorTypeFileContent(rules: LayerQuantRule[]): string {
     .map((rule) => {
       const pattern = rule.startLayer === rule.endLayer
         ? `blk\\.${rule.startLayer}\\..*`
-        : `blk\\.(${rangeToAlternation(rule.startLayer, rule.endLayer)})\\..*`
+        : `blk\\.(${rangeToRegex(rule.startLayer, rule.endLayer)})\\..*`
       return `${pattern}=${toTensorOverrideType(rule.quantType)}`
     })
     .join("\n")
@@ -193,10 +193,60 @@ function formatLayerRange(rule: LayerQuantRule): string {
     : `${rule.startLayer}-${rule.endLayer}`
 }
 
-function rangeToAlternation(start: number, end: number): string {
-  const layers: string[] = []
-  for (let layer = start; layer <= end; layer++) {
-    layers.push(String(layer))
+function digitClass(low: number, high: number): string {
+  if (low === high) return String(low)
+  return `[${low}-${high}]`
+}
+
+function splitToPatterns(start: number, end: number): string[] {
+  if (start > end) return []
+  if (start === end) return [String(start)]
+
+  const startStr = String(start)
+  const endStr = String(end)
+
+  if (startStr.length !== endStr.length) {
+    const boundary = Math.pow(10, startStr.length) - 1
+    return [...splitToPatterns(start, boundary), ...splitToPatterns(boundary + 1, end)]
   }
-  return layers.join("|")
+
+  const digits = startStr.length
+  let i = 0
+  while (i < digits && startStr[i] === endStr[i]) i++
+  const prefix = startStr.slice(0, i)
+
+  if (i === digits - 1) {
+    return [`${prefix}${digitClass(Number(startStr[i]), Number(endStr[i]))}`]
+  }
+
+  const sd = Number(startStr[i])
+  const ed = Number(endStr[i])
+  const restLen = digits - i - 1
+  const restPattern = restLen === 1 ? "[0-9]" : `[0-9]{${restLen}}`
+
+  if (/^0*$/.test(startStr.slice(i + 1)) && /^9*$/.test(endStr.slice(i + 1))) {
+    return [`${prefix}${digitClass(sd, ed)}${restPattern}`]
+  }
+
+  const patterns: string[] = []
+
+  const leftEnd = Number(`${prefix}${sd}${"9".repeat(restLen)}`)
+  patterns.push(...splitToPatterns(start, leftEnd))
+
+  const midLow = sd + 1
+  const midHigh = ed - 1
+  if (midLow <= midHigh) {
+    patterns.push(`${prefix}${digitClass(midLow, midHigh)}${restPattern}`)
+  }
+
+  const rightStart = Number(`${prefix}${ed}${"0".repeat(restLen)}`)
+  patterns.push(...splitToPatterns(rightStart, end))
+
+  return patterns
+}
+
+export function rangeToRegex(start: number, end: number): string {
+  if (start > end) return String(start)
+  const patterns = splitToPatterns(start, end)
+  return patterns.length <= 1 ? patterns[0] || String(start) : `(?:${patterns.join("|")})`
 }

@@ -75,8 +75,8 @@ export function parseQuantizationProfileJson(raw: string): ProfileValidation {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
-  } catch (err: any) {
-    return { profile: null, valid: false, message: `Invalid JSON: ${err?.message || err}` }
+  } catch (err: unknown) {
+    return { profile: null, valid: false, message: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}` }
   }
 
   if (!isObject(parsed)) return { profile: null, valid: false, message: "Profile must be a JSON object" }
@@ -142,8 +142,8 @@ export function parseQuantizationProfileJson(raw: string): ProfileValidation {
 export function loadQuantizationProfile(filePath: string): ProfileValidation {
   try {
     return parseQuantizationProfileJson(fs.readFileSync(resolvePath(filePath), "utf-8"))
-  } catch (err: any) {
-    return { profile: null, valid: false, message: `Could not read profile: ${err?.message || err}` }
+  } catch (err: unknown) {
+    return { profile: null, valid: false, message: `Could not read profile: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
 

@@ -75,6 +75,30 @@ export function scanForGgufFiles(dir: string): ModelFile[] {
   return scanForFiles(dir).filter((file) => file.type === "gguf")
 }
 
+export interface CollectedGgufFile {
+  labelPath: string
+  fullPath: string
+  name: string
+  size: number
+}
+
+export function collectGgufFiles(sourceModelsDir: string, outputModelsDir: string): CollectedGgufFile[] {
+  return [
+    ...scanForGgufFiles(sourceModelsDir).map((file) => ({
+      labelPath: path.join(sourceModelsDir, file.path),
+      fullPath: resolvePath(path.join(sourceModelsDir, file.path)),
+      name: file.name,
+      size: file.size,
+    })),
+    ...scanForGgufFiles(outputModelsDir).map((file) => ({
+      labelPath: path.join(outputModelsDir, file.path),
+      fullPath: resolvePath(path.join(outputModelsDir, file.path)),
+      name: file.name,
+      size: file.size,
+    })),
+  ].filter((file, index, all) => all.findIndex((candidate) => candidate.fullPath === file.fullPath) === index)
+}
+
 export function scanForSafetensorsDirs(dir: string): string[] {
   const fullDir = resolvePath(dir)
   if (!fs.existsSync(fullDir)) return []
@@ -122,6 +146,44 @@ export function fileExists(filePath: string): boolean {
     return fs.existsSync(resolvePath(filePath))
   } catch {
     return false
+  }
+}
+
+const WINDOWS_RESERVED_NAMES = new Set([
+  "CON", "PRN", "AUX", "NUL",
+  "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+  "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+])
+
+export function sanitizeDirName(name: string): string {
+  const cleaned = name
+    .replace(/[\x00-\x1f\\/]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  if (!cleaned) return "model"
+  if (WINDOWS_RESERVED_NAMES.has(cleaned.replace(/\.+$/, "").toUpperCase())) {
+    return `${cleaned}-model`
+  }
+  return cleaned
+}
+
+export function isSafeFileName(name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed) return false
+  if (/[\x00-\x1f]/.test(trimmed)) return false
+  if (/[\\/:*?"<>|]/.test(trimmed)) return false
+  const stem = trimmed.replace(/\.+$/, "").toUpperCase()
+  if (WINDOWS_RESERVED_NAMES.has(stem)) return false
+  return true
+}
+
+export function removeDirIfEmpty(dir: string): void {
+  try {
+    const full = resolvePath(dir)
+    if (fs.existsSync(full) && fs.readdirSync(full).length === 0) {
+      fs.rmdirSync(full)
+    }
+  } catch {
   }
 }
 

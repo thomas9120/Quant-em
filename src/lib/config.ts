@@ -59,8 +59,8 @@ export function loadConfig(): QuantEmConfig {
       const parsed = JSON.parse(raw)
       config = { ...DEFAULT_CONFIG, ...parsed }
     }
-  } catch (err: any) {
-    console.warn(`Warning: Could not load config from ${configPath}: ${err?.message || err}`)
+  } catch (err: unknown) {
+    console.warn(`Warning: Could not load config from ${configPath}: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   if (!config.hfToken) {

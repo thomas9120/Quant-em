@@ -142,6 +142,12 @@ function compactLayerPattern(names: string[]): string {
   return `^(${names.map(escapeRegex).join("|")})$`
 }
 
+function compareStrings(a: string, b: string): number {
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
 function buildCompactRules(tensors: GgufTensorInfo[], baseQuantType: string): {
   tokenEmbeddingType?: string
   outputTensorType?: string
@@ -184,7 +190,7 @@ function buildCompactRules(tensors: GgufTensorInfo[], baseQuantType: string): {
         type,
       }
     })
-    .sort((a, b) => a.pattern.localeCompare(b.pattern) || a.type.localeCompare(b.type))
+    .sort((a, b) => compareStrings(a.pattern, b.pattern) || compareStrings(a.type, b.type))
 
   return { tokenEmbeddingType, outputTensorType, rules, skippedTypes }
 }
@@ -242,14 +248,59 @@ export function extractProfileFromDump(dump: GgufDumpInfo, fallbackFileName: str
 }
 
 export function findGgufDumpScript(config: QuantEmConfig): string | null {
-  const candidates = [
-    config.llamaCppSourcePath ? path.join(resolvePath(config.llamaCppSourcePath), "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
-    config.llamaCppPath ? path.join(resolvePath(config.llamaCppPath), "source", "llama.cpp-b9544", "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
-    config.llamaCppPath ? path.join(path.dirname(resolvePath(config.llamaCppPath)), "source", "llama.cpp-b9544", "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
-    path.join(resolvePath("llama_cpp"), "b9544", "source", "llama.cpp-b9544", "gguf-py", "gguf", "scripts", "gguf_dump.py"),
-  ].filter((value): value is string => Boolean(value))
+  const version = config.llamaCppVersion
+  const sourceDirName = version ? `llama.cpp-${version}` : null
 
-  return candidates.find((candidate) => fs.existsSync(candidate)) || null
+  const candidates: (string | null)[] = [
+    config.llamaCppSourcePath ? path.join(resolvePath(config.llamaCppSourcePath), "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
+    config.llamaCppPath && sourceDirName ? path.join(resolvePath(config.llamaCppPath), "source", sourceDirName, "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
+    config.llamaCppPath && sourceDirName ? path.join(path.dirname(resolvePath(config.llamaCppPath)), "source", sourceDirName, "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
+    version && sourceDirName ? path.join(resolvePath("llama_cpp"), version, "source", sourceDirName, "gguf-py", "gguf", "scripts", "gguf_dump.py") : null,
+  ]
+
+  const found = candidates.find((candidate) => candidate !== null && fs.existsSync(candidate))
+  if (found) return found
+
+  return findGgufDumpScriptByScan(config)
+}
+
+function findGgufDumpScriptByScan(config: QuantEmConfig): string | null {
+  const searchRoots: string[] = []
+  if (config.llamaCppPath) {
+    searchRoots.push(path.join(resolvePath(config.llamaCppPath), "source"))
+    searchRoots.push(path.join(path.dirname(resolvePath(config.llamaCppPath)), "source"))
+  }
+  searchRoots.push(resolvePath("llama_cpp"))
+
+  for (const root of searchRoots) {
+    if (!fs.existsSync(root)) continue
+    const found = scanForGgufDumpScript(root)
+    if (found) return found
+  }
+  return null
+}
+
+function scanForGgufDumpScript(root: string): string | null {
+  const targetSegments = ["gguf-py", "gguf", "scripts", "gguf_dump.py"]
+  function walk(currentDir: string, depth: number): string | null {
+    if (depth > 8) return null
+    const candidate = path.join(currentDir, ...targetSegments)
+    if (fs.existsSync(candidate)) return candidate
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    } catch {
+      return null
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const found = walk(path.join(currentDir, entry.name), depth + 1)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return walk(root, 0)
 }
 
 export async function analyzeGgufFile(filePath: string, config: QuantEmConfig): Promise<ExtractedProfileResult> {

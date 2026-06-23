@@ -31,8 +31,8 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
         stdout: "pipe",
         stderr: "pipe",
       })
-    } catch (err: any) {
-      const message = err?.message || String(err)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
       stderrLines.push(message)
       opts.onOutput?.(message, "stderr")
       opts.onStderr?.(message)
@@ -82,8 +82,8 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
             }
             processChunk(decoder.decode(value, { stream: true }))
           }
-        } catch (err: any) {
-          const message = err?.message || String(err)
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err)
           lines.push(message)
           opts.onOutput?.(message, label)
           if (label === "stdout") opts.onStdout?.(message)

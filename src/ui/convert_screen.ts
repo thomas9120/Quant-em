@@ -4,6 +4,7 @@ import {
   TextRenderable,
   SelectRenderable,
   type SelectOption,
+  type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir } from "../lib/config"
@@ -37,7 +38,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   const dirs = scanForSafetensorsDirs(config.sourceModelsDir)
 
   if (dirs.length === 0) {
-    const onKey = (key: any) => {
+    const onKey = (key: KeyEvent) => {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
@@ -213,7 +214,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
 
-  const onKey = (key: any) => {
+  const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
       popScreen()
       return

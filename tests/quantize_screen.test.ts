@@ -7,6 +7,7 @@ import {
   buildTensorTypeFileContent,
   formatMixedQuantLabel,
   parseLayerQuantRules,
+  rangeToRegex,
   toTensorOverrideType,
 } from "../src/lib/quantization_rules"
 import {
@@ -160,7 +161,7 @@ describe("quantize screen helpers", () => {
 
   test("builds tensor override file contents and quantize args", () => {
     const rules = parseLayerQuantRules("0=Q8_0; 1-3=Q5_K_M", 4).rules
-    expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.(1|2|3)\\..*=Q5_K")
+    expect(buildTensorTypeFileContent(rules)).toBe("blk\\.0\\..*=Q8_0\nblk\\.([1-3])\\..*=Q5_K")
     expect(buildQuantizeArgs("in.gguf", "out.gguf", "Q4_K_M", 8, [], null)).toEqual([
       "in.gguf",
       "out.gguf",
@@ -197,6 +198,32 @@ describe("quantize screen helpers", () => {
       "8",
     ])
     expect(formatMixedQuantLabel("Q4_K_M", rules)).toBe("mixed: Q8_0/Q5_K_M; base Q4_K_M")
+  })
+
+  test("rangeToRegex emits compact patterns that match exactly the requested range", () => {
+    expect(rangeToRegex(1, 3)).toBe("[1-3]")
+    expect(rangeToRegex(0, 9)).toBe("[0-9]")
+    expect(rangeToRegex(5, 5)).toBe("5")
+    const large = rangeToRegex(0, 99)
+    expect(large).toBe("(?:[0-9]|[1-9][0-9])")
+    expect(large.length).toBeLessThan(40)
+
+    const match = (n: number) => new RegExp(`^(?:${large})$`).test(String(n))
+    for (let n = 0; n <= 99; n++) expect(match(n)).toBe(true)
+    expect(match(100)).toBe(false)
+    expect(match(-1)).toBe(false)
+
+    const big = rangeToRegex(0, 127)
+    const re = new RegExp(`^(?:${big})$`)
+    for (let n = 0; n <= 127; n++) expect(re.test(String(n))).toBe(true)
+    expect(re.test("128")).toBe(false)
+    expect(big.length).toBeLessThan(120)
+
+    const cross = rangeToRegex(95, 103)
+    const reCross = new RegExp(`^(?:${cross})$`)
+    for (let n = 95; n <= 103; n++) expect(reCross.test(String(n))).toBe(true)
+    expect(reCross.test("94")).toBe(false)
+    expect(reCross.test("104")).toBe(false)
   })
 
   test("maps whole-model recipe names to llama.cpp tensor override types", () => {
