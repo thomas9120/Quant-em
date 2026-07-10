@@ -36,6 +36,48 @@ function quotePowerShellLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000
+
+function readChunkWithIdleTimeout(
+  reader: { read(): Promise<{ done: boolean; value?: Uint8Array | undefined }> },
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ done: boolean; value?: Uint8Array }> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      if (signal) signal.removeEventListener("abort", onAbort)
+    }
+    const onAbort = () => {
+      cleanup()
+      reject(signal?.reason ?? new Error("Download aborted"))
+    }
+
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("Download aborted"))
+      return
+    }
+    if (signal) signal.addEventListener("abort", onAbort, { once: true })
+
+    timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`Download stalled: no data for ${Math.round(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+
+    reader.read().then(
+      (result) => {
+        cleanup()
+        resolve(result)
+      },
+      (err: unknown) => {
+        cleanup()
+        reject(err)
+      },
+    )
+  })
+}
+
 async function downloadFile(url: string, destination: string, onProgress?: (downloaded: number, total: number) => void, signal?: AbortSignal): Promise<void> {
   const response = await fetch(url, {
     headers: { "User-Agent": "quant-em" },
@@ -55,8 +97,8 @@ async function downloadFile(url: string, destination: string, onProgress?: (down
 
   try {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      const { done, value } = await readChunkWithIdleTimeout(reader, DOWNLOAD_IDLE_TIMEOUT_MS, signal)
+      if (done || !value) break
       file.write(value)
       downloaded += value.length
       onProgress?.(downloaded, contentLength)

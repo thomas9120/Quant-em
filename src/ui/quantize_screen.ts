@@ -48,7 +48,7 @@ function formatOptionalPath(filePath: string | null | undefined, compactLayout: 
 }
 
 function isSplitGgufFirstShard(filePath: string): boolean {
-  return /-\d{5}-of-\d{5}\.gguf$/i.test(path.basename(filePath)) && /-00001-of-\d{5}\.gguf$/i.test(path.basename(filePath))
+  return /-00001-of-\d{5}\.gguf$/i.test(path.basename(filePath))
 }
 
 export function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
@@ -434,6 +434,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(outputInput)
 
+  const outputErrorText = new TextRenderable(ctx, {
+    id: "output-error",
+    content: "",
+    fg: "red",
+    height: 1,
+  })
+  container.add(outputErrorText)
+
   const splitLabel = new TextRenderable(ctx, {
     id: "split-label",
     content: "Split output handling:",
@@ -663,6 +671,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   let quantizing = false
   let abortProcess: (() => void) | null = null
   let focusedSelect: FocusedField = "file"
+  const tabOrder: FocusedField[] = [
+    "file", "mode", "quant", "embedding",
+    ...(hasProfiles ? (["profile"] as FocusedField[]) : []),
+    "imatrix", "rules", "output", "split", "prune",
+  ]
 
   const focusSelectedList = () => {
     fileSelect.blur()
@@ -708,19 +721,18 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const layerQuantValidation = updateLayerQuantValidation()
     const keepSplit = shouldKeepSplit()
 
+    outputErrorText.content = ""
+
     if (!selectedFile || !quantType || !outputFile) {
-      errorText.content = "Select a model, default quant type, and output filename first"
-      errorText.fg = "red"
+      outputErrorText.content = "Select a model, default quant type, and output filename first"
       return false
     }
     if (/[\\/]/.test(outputInput.value.trim())) {
-      errorText.content = "Output filename cannot include folders"
-      errorText.fg = "red"
+      outputErrorText.content = "Output filename cannot include folders"
       return false
     }
     if (!isSafeFileName(outputInput.value.trim())) {
-      errorText.content = "Output filename contains invalid characters or a reserved name"
-      errorText.fg = "red"
+      outputErrorText.content = "Output filename contains invalid characters or a reserved name"
       return false
     }
     if (!validation.valid) return false
@@ -943,25 +955,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     if (key.name === "tab") {
-      focusedSelect = focusedSelect === "file"
-        ? "mode"
-        : focusedSelect === "mode"
-        ? "quant"
-        : focusedSelect === "quant"
-          ? "embedding"
-        : focusedSelect === "embedding"
-          ? (hasProfiles ? "profile" : "imatrix")
-          : focusedSelect === "profile"
-          ? "imatrix"
-          : focusedSelect === "imatrix"
-          ? "rules"
-          : focusedSelect === "rules"
-          ? "output"
-          : focusedSelect === "output"
-          ? "split"
-          : focusedSelect === "split"
-            ? "prune"
-            : "file"
+      focusedSelect = tabOrder[(tabOrder.indexOf(focusedSelect) + 1) % tabOrder.length] ?? "file"
       focusSelectedList()
       return
     }
