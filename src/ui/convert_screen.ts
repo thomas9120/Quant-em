@@ -42,7 +42,9 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
-    setCleanup(() => renderer.keyInput.off("keypress", onKey))
+    setCleanup(() => {
+      renderer.keyInput.off("keypress", onKey)
+    })
 
     const noModels = new TextRenderable(ctx, {
       id: "no-safetensors",
@@ -132,7 +134,17 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   let converting = false
+  let abortProcess: (() => void) | null = null
+  let processAborted = false
   let focusedSelect: "dir" | "precision" = "dir"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
 
   const focusSelectedList = () => {
     dirSelect.blur()
@@ -185,7 +197,8 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
     const args = [convertTool.scriptPath, modelDir, "--outfile", outputFile, "--outtype", precision]
 
-    const result = await runProcess({
+    processAborted = false
+    const { result, abort: abortConvert } = runProcess({
       cmd: "python",
       args,
       cwd: convertTool.scriptDir,
@@ -196,10 +209,16 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
     })
+    abortProcess = abortConvert
 
+    const resultData = await result
+
+    abortProcess = null
     converting = false
 
-    if (result.exitCode === 0) {
+    if (processAborted) return
+
+    if (resultData.exitCode === 0) {
       panel.setStatus("Complete!")
       panel.addLine("", "white")
       panel.addLine("Conversion complete!", "green")
@@ -207,8 +226,8 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     } else {
       panel.setStatus("Failed")
       panel.addLine("", "white")
-      panel.addLine(`Conversion failed (exit code ${result.exitCode})`, "red")
-      if (result.stderr.includes("ModuleNotFoundError")) {
+      panel.addLine(`Conversion failed (exit code ${resultData.exitCode})`, "red")
+      if (resultData.stderr.includes("ModuleNotFoundError")) {
         panel.addLine(`Hint: install conversion dependencies with python -m pip install -r ${getRequirementsPath(convertTool.scriptDir)}`, "yellow")
       }
     }
@@ -216,6 +235,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
+      abortRunningProcess()
       popScreen()
       return
     }
@@ -231,7 +251,10 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    abortRunningProcess()
+    renderer.keyInput.off("keypress", onKey)
+  })
 
   process.nextTick(() => {
     focusSelectedList()

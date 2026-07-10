@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { getGgufLayerCount } from "../src/lib/file_utils"
+import { getGgufLayerCount, formatFileSize, collectImatrixFiles } from "../src/lib/file_utils"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -78,5 +78,46 @@ describe("getGgufLayerCount", () => {
     withTempFile("unsupported-value.gguf", contents, (filePath) => {
       expect(getGgufLayerCount(filePath)).toBeNull()
     })
+  })
+})
+
+describe("formatFileSize", () => {
+  test("formats common sizes", () => {
+    expect(formatFileSize(0)).toBe("0 B")
+    expect(formatFileSize(500)).toBe("500.0 B")
+    expect(formatFileSize(1024)).toBe("1.0 KB")
+    expect(formatFileSize(1024 ** 2)).toBe("1.0 MB")
+    expect(formatFileSize(1024 ** 3)).toBe("1.0 GB")
+    expect(formatFileSize(1024 ** 4)).toBe("1.0 TB")
+  })
+
+  test("clamps past TB instead of printing an undefined unit", () => {
+    const result = formatFileSize(1024 ** 5)
+    expect(result).not.toContain("undefined")
+    expect(result).toMatch(/TB$/)
+    expect(formatFileSize(5 * 1024 ** 5)).toMatch(/TB$/)
+  })
+})
+
+describe("collectImatrixFiles", () => {
+  test("includes .gguf, .imatrix, and .dat files but skips others", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "quant-em-imatrix-"))
+    const sourceDir = path.join(tempRoot, "source")
+    const outputDir = path.join(tempRoot, "output")
+    fs.mkdirSync(sourceDir, { recursive: true })
+    fs.mkdirSync(outputDir, { recursive: true })
+    fs.writeFileSync(path.join(sourceDir, "model.gguf"), "x")
+    fs.writeFileSync(path.join(sourceDir, "model.imatrix"), "x")
+    fs.writeFileSync(path.join(sourceDir, "old.dat"), "x")
+    fs.writeFileSync(path.join(sourceDir, "ignore.txt"), "x")
+    fs.writeFileSync(path.join(outputDir, "shared.gguf"), "x")
+    try {
+      const names = collectImatrixFiles(sourceDir, outputDir)
+        .map((f) => f.name)
+        .sort()
+      expect(names).toEqual(["model.gguf", "model.imatrix", "old.dat", "shared.gguf"])
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 })

@@ -6,7 +6,7 @@ import {
   type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
-import { loadConfig, resolvePath, ensureDir } from "../lib/config"
+import { loadConfig, resolvePath, ensureDir, getEffectiveHfToken } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { getHfCommand } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
@@ -75,6 +75,27 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   let downloading = false
+  let abortProcess: (() => void) | null = null
+  let processAborted = false
+  let focusedInput: "repo" | "include" = "repo"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
+
+  const focusCurrentInput = () => {
+    repoInput.blur()
+    includeInput.blur()
+    if (focusedInput === "repo") {
+      repoInput.focus()
+    } else {
+      includeInput.focus()
+    }
+  }
 
   const startDownload = async () => {
     if (downloading) return
@@ -110,11 +131,13 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     const env: Record<string, string> = {
       HF_HUB_DISABLE_PROGRESS_BARS: "1",
     }
-    if (config.hfToken) {
-      env.HF_TOKEN = config.hfToken
+    const effectiveToken = getEffectiveHfToken(config)
+    if (effectiveToken) {
+      env.HF_TOKEN = effectiveToken
     }
 
-    const result = await runProcess({
+    processAborted = false
+    const { result, abort: abortDownload } = runProcess({
       cmd: getHfCommand(),
       args,
       env,
@@ -122,10 +145,21 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
     })
+    abortProcess = abortDownload
 
+    const resultData = await result
+
+    abortProcess = null
     downloading = false
 
-    if (result.exitCode === 0) {
+    if (processAborted) {
+      if (!localDirExistedBefore) {
+        removeDirIfEmpty(path.join(config.sourceModelsDir, repoName))
+      }
+      return
+    }
+
+    if (resultData.exitCode === 0) {
       panel.setStatus("Complete!")
       panel.addLine("", "white")
       panel.addLine("Download complete!", "green")
@@ -136,9 +170,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       }
       panel.setStatus("Failed")
       panel.addLine("", "white")
-      panel.addLine(`Download failed (exit code ${result.exitCode})`, "red")
-      if (result.stderr) {
-        panel.addLine(result.stderr, "red")
+      panel.addLine(`Download failed (exit code ${resultData.exitCode})`, "red")
+      if (resultData.stderr) {
+        panel.addLine(resultData.stderr, "red")
       }
     }
   }
@@ -147,10 +181,26 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   includeInput.on("enter", () => startDownload())
 
   const onKey = (key: KeyEvent) => {
-    if (key.name === "escape") popScreen()
+    if (key.name === "escape") {
+      abortRunningProcess()
+      popScreen()
+      return
+    }
+
+    if (key.name === "tab") {
+      focusedInput = focusedInput === "repo" ? "include" : "repo"
+      focusCurrentInput()
+    }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    abortRunningProcess()
+    renderer.keyInput.off("keypress", onKey)
+  })
+
+  process.nextTick(() => {
+    focusCurrentInput()
+  })
 
   return container
 }

@@ -34,7 +34,7 @@ export function getFileSize(filePath: string): number {
 export function formatFileSize(bytes: number): string {
   if (bytes <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   const val = bytes / Math.pow(1024, i)
   return `${val.toFixed(1)} ${units[i]}`
 }
@@ -82,21 +82,35 @@ export interface CollectedGgufFile {
   size: number
 }
 
-export function collectGgufFiles(sourceModelsDir: string, outputModelsDir: string): CollectedGgufFile[] {
+const IMATRIX_EXTENSIONS = [".gguf", ".imatrix", ".dat"]
+
+function collectFilesFromDirs(
+  sourceModelsDir: string,
+  outputModelsDir: string,
+  scan: (dir: string) => ModelFile[],
+): CollectedGgufFile[] {
   return [
-    ...scanForGgufFiles(sourceModelsDir).map((file) => ({
+    ...scan(sourceModelsDir).map((file) => ({
       labelPath: path.join(sourceModelsDir, file.path),
       fullPath: resolvePath(path.join(sourceModelsDir, file.path)),
       name: file.name,
       size: file.size,
     })),
-    ...scanForGgufFiles(outputModelsDir).map((file) => ({
+    ...scan(outputModelsDir).map((file) => ({
       labelPath: path.join(outputModelsDir, file.path),
       fullPath: resolvePath(path.join(outputModelsDir, file.path)),
       name: file.name,
       size: file.size,
     })),
   ].filter((file, index, all) => all.findIndex((candidate) => candidate.fullPath === file.fullPath) === index)
+}
+
+export function collectGgufFiles(sourceModelsDir: string, outputModelsDir: string): CollectedGgufFile[] {
+  return collectFilesFromDirs(sourceModelsDir, outputModelsDir, scanForGgufFiles)
+}
+
+export function collectImatrixFiles(sourceModelsDir: string, outputModelsDir: string): CollectedGgufFile[] {
+  return collectFilesFromDirs(sourceModelsDir, outputModelsDir, (dir) => scanForFiles(dir, IMATRIX_EXTENSIONS))
 }
 
 export function scanForSafetensorsDirs(dir: string): string[] {

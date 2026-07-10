@@ -10,7 +10,7 @@ import {
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, saveConfig, resolvePath, ensureDir } from "../lib/config"
-import { scanForGgufFiles, formatFileSize, getGgufLayerCount, isSafeFileName, collectGgufFiles } from "../lib/file_utils"
+import { scanForGgufFiles, formatFileSize, getGgufLayerCount, isSafeFileName, collectImatrixFiles } from "../lib/file_utils"
 import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import {
@@ -48,7 +48,7 @@ function formatOptionalPath(filePath: string | null | undefined, compactLayout: 
 }
 
 function isSplitGgufFirstShard(filePath: string): boolean {
-  return /-\d{5}-of-\d{5}\.gguf$/i.test(path.basename(filePath)) && /-00001-of-\d{5}\.gguf$/i.test(path.basename(filePath))
+  return /-00001-of-\d{5}\.gguf$/i.test(path.basename(filePath))
 }
 
 export function parsePruneLayers(value: string, layerCount: number | null): PruneValidation {
@@ -149,7 +149,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
-  const imatrixFiles = collectGgufFiles(config.sourceModelsDir, config.outputModelsDir)
+  const imatrixFiles = collectImatrixFiles(config.sourceModelsDir, config.outputModelsDir)
   const profiles = scanForQuantizationProfiles(config.quantProfilesDir)
   const hasProfiles = profiles.length > 0
 
@@ -158,7 +158,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
-    setCleanup(() => renderer.keyInput.off("keypress", onKey))
+    setCleanup(() => {
+      renderer.keyInput.off("keypress", onKey)
+    })
 
     const noFiles = new TextRenderable(ctx, {
       id: "no-gguf",
@@ -432,6 +434,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   })
   container.add(outputInput)
 
+  const outputErrorText = new TextRenderable(ctx, {
+    id: "output-error",
+    content: "",
+    fg: "red",
+    height: 1,
+  })
+  container.add(outputErrorText)
+
   const splitLabel = new TextRenderable(ctx, {
     id: "split-label",
     content: "Split output handling:",
@@ -659,7 +669,22 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   renderHistory()
 
   let quantizing = false
+  let abortProcess: (() => void) | null = null
+  let processAborted = false
   let focusedSelect: FocusedField = "file"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
+  const tabOrder: FocusedField[] = [
+    "file", "mode", "quant", "embedding",
+    ...(hasProfiles ? (["profile"] as FocusedField[]) : []),
+    "imatrix", "rules", "output", "split", "prune",
+  ]
 
   const focusSelectedList = () => {
     fileSelect.blur()
@@ -705,19 +730,18 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     const layerQuantValidation = updateLayerQuantValidation()
     const keepSplit = shouldKeepSplit()
 
+    outputErrorText.content = ""
+
     if (!selectedFile || !quantType || !outputFile) {
-      errorText.content = "Select a model, default quant type, and output filename first"
-      errorText.fg = "red"
+      outputErrorText.content = "Select a model, default quant type, and output filename first"
       return false
     }
     if (/[\\/]/.test(outputInput.value.trim())) {
-      errorText.content = "Output filename cannot include folders"
-      errorText.fg = "red"
+      outputErrorText.content = "Output filename cannot include folders"
       return false
     }
     if (!isSafeFileName(outputInput.value.trim())) {
-      errorText.content = "Output filename contains invalid characters or a reserved name"
-      errorText.fg = "red"
+      outputErrorText.content = "Output filename contains invalid characters or a reserved name"
       return false
     }
     if (!validation.valid) return false
@@ -885,13 +909,19 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       imatrixFile,
     })
 
-    const result = await runProcess({
+    processAborted = false
+    const { result, abort: abortQuantize } = runProcess({
       cmd: llamaQuantize,
       args,
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
     })
+    abortProcess = abortQuantize
+
+    const resultData = await result
+
+    abortProcess = null
     if (tensorTypeFile) {
       try {
         fs.rmSync(resolvePath(tensorTypeFile), { force: true })
@@ -900,11 +930,14 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     quantizing = false
-    const success = result.exitCode === 0
+
+    if (processAborted) return
+
+    const success = resultData.exitCode === 0
     const historyQuantType = isUsingProfile() && profile
       ? `profile: ${profile.name}; base ${profile.baseQuantType}`
       : formatMixedQuantLabel(quantType, layerQuantValidation.rules)
-    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath, imatrixFile)
+    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, resultData.exitCode, profilePath, imatrixFile)
 
     if (success) {
       panel.setStatus("Complete!")
@@ -914,11 +947,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     } else {
       panel.setStatus("Failed")
       panel.addLine("", "white")
-      panel.addLine(`Quantization failed (exit code ${result.exitCode})`, "red")
-      if (result.stderr) {
-        panel.addLine(result.stderr, "red")
+      panel.addLine(`Quantization failed (exit code ${resultData.exitCode})`, "red")
+      if (resultData.stderr) {
+        panel.addLine(resultData.stderr, "red")
       }
-      for (const hint of getFailureHints(result, llamaQuantize)) {
+      for (const hint of getFailureHints(resultData, llamaQuantize)) {
         panel.addLine(`Hint: ${hint}`, "yellow")
       }
     }
@@ -926,30 +959,13 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
+      abortRunningProcess()
       popScreen()
       return
     }
 
     if (key.name === "tab") {
-      focusedSelect = focusedSelect === "file"
-        ? "mode"
-        : focusedSelect === "mode"
-        ? "quant"
-        : focusedSelect === "quant"
-          ? "embedding"
-        : focusedSelect === "embedding"
-          ? (hasProfiles ? "profile" : "imatrix")
-          : focusedSelect === "profile"
-          ? "imatrix"
-          : focusedSelect === "imatrix"
-          ? "rules"
-          : focusedSelect === "rules"
-          ? "output"
-          : focusedSelect === "output"
-          ? "split"
-          : focusedSelect === "split"
-            ? "prune"
-            : "file"
+      focusedSelect = tabOrder[(tabOrder.indexOf(focusedSelect) + 1) % tabOrder.length] ?? "file"
       focusSelectedList()
       return
     }
@@ -963,7 +979,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    abortRunningProcess()
+    renderer.keyInput.off("keypress", onKey)
+  })
 
   process.nextTick(() => {
     focusSelectedList()
