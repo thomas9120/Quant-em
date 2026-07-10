@@ -6,7 +6,7 @@ import {
   type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
-import { loadConfig, resolvePath, ensureDir } from "../lib/config"
+import { loadConfig, resolvePath, ensureDir, getEffectiveHfToken } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { getHfCommand } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
@@ -122,8 +122,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
     const env: Record<string, string> = {
       HF_HUB_DISABLE_PROGRESS_BARS: "1",
     }
-    if (config.hfToken) {
-      env.HF_TOKEN = config.hfToken
+    const effectiveToken = getEffectiveHfToken(config)
+    if (effectiveToken) {
+      env.HF_TOKEN = effectiveToken
     }
 
     const { result, abort: abortDownload } = runProcess({

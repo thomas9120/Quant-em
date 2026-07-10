@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { DEFAULT_CONFIG } from "../src/types"
-import { getConfigPath, loadConfig, resolvePath, saveConfig } from "../src/lib/config"
+import { getConfigPath, loadConfig, resolvePath, saveConfig, getEffectiveHfToken } from "../src/lib/config"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -75,9 +75,12 @@ describe("config", () => {
     expect(resolvePath(config.outputModelsDir)).toBe(path.join(tempDir, "custom-output"))
   })
 
-  test("fills missing HF token from environment without overriding config token", () => {
+  test("resolves an effective HF token from the environment without persisting it", () => {
     process.env.HF_TOKEN = " env-token "
-    expect(loadConfig().hfToken).toBe("env-token")
+    const config = loadConfig()
+
+    expect(config.hfToken).toBeNull()
+    expect(getEffectiveHfToken(config)).toBe("env-token")
 
     saveConfig({
       ...DEFAULT_CONFIG,
@@ -87,11 +90,32 @@ describe("config", () => {
     expect(loadConfig().hfToken).toBe("config-token")
   })
 
+  test("does not persist a detected HF token when a loaded config is saved", () => {
+    process.env.HF_TOKEN = "env-token"
+    const config = loadConfig()
+    expect(getEffectiveHfToken(config)).toBe("env-token")
+
+    saveConfig(config)
+    expect(loadConfig().hfToken).toBeNull()
+  })
+
   test("fills missing HF token from token file", () => {
     const tokenFile = path.join(tempDir, "hf-token")
     fs.writeFileSync(tokenFile, " file-token \n")
     process.env.HF_TOKEN_PATH = tokenFile
 
-    expect(loadConfig().hfToken).toBe("file-token")
+    expect(getEffectiveHfToken(loadConfig())).toBe("file-token")
+  })
+
+  test("coerces invalid quantizationHistory and defaultThreads to defaults", () => {
+    fs.writeFileSync(getConfigPath(), JSON.stringify({
+      quantizationHistory: null,
+      defaultThreads: "not-a-number",
+    }))
+
+    const config = loadConfig()
+
+    expect(config.quantizationHistory).toEqual([])
+    expect(config.defaultThreads).toBe(DEFAULT_CONFIG.defaultThreads)
   })
 })

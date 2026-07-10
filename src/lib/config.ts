@@ -63,11 +63,18 @@ export function loadConfig(): QuantEmConfig {
     console.warn(`Warning: Could not load config from ${configPath}: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  if (!config.hfToken) {
-    config.hfToken = detectHfToken()
+  if (!Array.isArray(config.quantizationHistory)) {
+    config.quantizationHistory = []
+  }
+  if (typeof config.defaultThreads !== "number" || !Number.isFinite(config.defaultThreads)) {
+    config.defaultThreads = DEFAULT_CONFIG.defaultThreads
   }
 
   return config
+}
+
+export function getEffectiveHfToken(config: QuantEmConfig): string | null {
+  return config.hfToken || detectHfToken()
 }
 
 export function saveConfig(config: QuantEmConfig): void {

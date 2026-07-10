@@ -6,7 +6,7 @@ import {
   type KeyEvent,
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
-import { loadConfig, saveConfig } from "../lib/config"
+import { loadConfig, saveConfig, getEffectiveHfToken } from "../lib/config"
 
 export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   const ctx = renderer
@@ -35,7 +35,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
     { key: "defaultThreads", label: "Default threads:", value: String(config.defaultThreads) },
     { key: "hfToken", label: "HF token:", value: config.hfToken || "" },
   ]
-  const detectedHfToken = Boolean(config.hfToken)
+  const detectedHfToken = !config.hfToken && Boolean(getEffectiveHfToken(config))
 
   const inputs: InputRenderable[] = []
 
