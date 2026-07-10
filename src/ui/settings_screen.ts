@@ -152,7 +152,22 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
   }
 
   for (const input of inputs) {
-    input.on("enter", () => save())
+    input.on("enter", () => {
+      if (confirmEscapeActive) return
+      save()
+    })
+  }
+
+  let focusedIndex = 0
+
+  const focusCurrentInput = () => {
+    for (const input of inputs) {
+      input.blur()
+    }
+    const target = inputs[focusedIndex]
+    if (target) {
+      target.focus()
+    }
   }
 
   const onKey = (key: KeyEvent) => {
@@ -167,7 +182,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
         confirmText.requestRender()
         confirmEscapeActive = true
         confirmEscapeHandler = (k: KeyEvent) => {
-          if (k.name === "enter") {
+          if (k.name === "return" || k.name === "enter") {
             removeConfirmEscape()
             popScreen()
           }
@@ -180,11 +195,20 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
         popScreen()
       }
     }
+
+    if (key.name === "tab") {
+      focusedIndex = (focusedIndex + 1) % inputs.length
+      focusCurrentInput()
+    }
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => {
     renderer.keyInput.off("keypress", onKey)
     removeConfirmEscape()
+  })
+
+  process.nextTick(() => {
+    focusCurrentInput()
   })
 
   return container

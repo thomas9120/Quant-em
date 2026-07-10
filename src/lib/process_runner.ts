@@ -13,17 +13,23 @@ export interface RunProcessOptions {
   onStderr?: StreamCallback
 }
 
+export interface RunProcessHandle {
+  result: Promise<ProcessResult>
+  abort: () => void
+}
+
 const DEFAULT_PROCESS_ENV: Record<string, string> = {
   PYTHONIOENCODING: "utf-8",
   PYTHONUTF8: "1",
 }
 
-export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
-  return new Promise((resolve) => {
+export function runProcess(opts: RunProcessOptions): RunProcessHandle {
+  let proc: ReturnType<typeof Bun.spawn> | null = null
+
+  const result = new Promise<ProcessResult>((resolve) => {
     const stdoutLines: string[] = []
     const stderrLines: string[] = []
 
-    let proc: ReturnType<typeof Bun.spawn>
     try {
       proc = Bun.spawn([opts.cmd, ...opts.args], {
         cwd: opts.cwd,
@@ -92,26 +98,43 @@ export function runProcess(opts: RunProcessOptions): Promise<ProcessResult> {
       })()
     }
 
-    const stdoutDone = reader(proc.stdout as ReadableStream<Uint8Array>, "stdout", stdoutLines)
-    const stderrDone = reader(proc.stderr as ReadableStream<Uint8Array>, "stderr", stderrLines)
+    if (proc.stdout && proc.stderr) {
+      const stdoutDone = reader(proc.stdout as ReadableStream<Uint8Array>, "stdout", stdoutLines)
+      const stderrDone = reader(proc.stderr as ReadableStream<Uint8Array>, "stderr", stderrLines)
 
-    Promise.all([stdoutDone, stderrDone, proc.exited]).then(([_, __, code]) => {
-      resolve({
-        exitCode: code,
-        stdout: stdoutLines.join("\n"),
-        stderr: stderrLines.join("\n"),
+      Promise.all([stdoutDone, stderrDone, proc.exited]).then(([_, __, code]) => {
+        resolve({
+          exitCode: code,
+          stdout: stdoutLines.join("\n"),
+          stderr: stderrLines.join("\n"),
+        })
       })
-    })
+    } else {
+      resolve({
+        exitCode: -1,
+        stdout: "",
+        stderr: "Process has no stdout/stderr streams",
+      })
+    }
   })
+
+  const abort = () => {
+    if (proc) {
+      proc.kill()
+    }
+  }
+
+  return { result, abort }
 }
 
 export async function checkCommandExists(cmd: string): Promise<boolean> {
   try {
-    const result = await runProcess({
+    const { result } = runProcess({
       cmd: process.platform === "win32" ? "where" : "which",
       args: [cmd],
     })
-    return result.exitCode === 0
+    const res = await result
+    return res.exitCode === 0
   } catch {
     return false
   }

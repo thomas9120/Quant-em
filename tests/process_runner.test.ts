@@ -8,7 +8,7 @@ describe("runProcess", () => {
     const stdoutLines: string[] = []
     const stderrLines: string[] = []
 
-    const result = await runProcess({
+    const { result } = runProcess({
       cmd: process.execPath,
       args: [
         "-e",
@@ -18,8 +18,9 @@ describe("runProcess", () => {
       onStdout: (line) => stdoutLines.push(line),
       onStderr: (line) => stderrLines.push(line),
     })
+    const data = await result
 
-    expect(result).toEqual({
+    expect(data).toEqual({
       exitCode: 0,
       stdout: "first\nlast",
       stderr: "warn\nfinal-err",
@@ -37,15 +38,16 @@ describe("runProcess", () => {
     const missingCommand = path.join(process.cwd(), "definitely-missing-command-for-quant-em-test")
     const stderrLines: string[] = []
 
-    const result = await runProcess({
+    const { result } = runProcess({
       cmd: missingCommand,
       args: [],
       onStderr: (line) => stderrLines.push(line),
     })
+    const data = await result
 
-    expect(result.exitCode).toBe(-1)
-    expect(result.stdout).toBe("")
-    expect(result.stderr.length).toBeGreaterThan(0)
-    expect(stderrLines).toEqual([result.stderr])
+    expect(data.exitCode).toBe(-1)
+    expect(data.stdout).toBe("")
+    expect(data.stderr.length).toBeGreaterThan(0)
+    expect(stderrLines).toEqual([data.stderr])
   })
 })

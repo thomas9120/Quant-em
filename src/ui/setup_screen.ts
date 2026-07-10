@@ -36,9 +36,10 @@ function quotePowerShellLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
-async function downloadFile(url: string, destination: string, onProgress?: (downloaded: number, total: number) => void): Promise<void> {
+async function downloadFile(url: string, destination: string, onProgress?: (downloaded: number, total: number) => void, signal?: AbortSignal): Promise<void> {
   const response = await fetch(url, {
     headers: { "User-Agent": "quant-em" },
+    signal,
   })
 
   if (!response.ok) {
@@ -78,45 +79,52 @@ function findFile(dir: string, fileName: string): string | null {
   return null
 }
 
-async function extractArchive(archivePath: string, destination: string, onOutput: (line: string) => void): Promise<void> {
+async function extractArchive(archivePath: string, destination: string, onOutput: (line: string) => void, signal?: AbortSignal): Promise<void> {
+  let cmd: string
+  let args: string[]
+  let label: string
   if (PLATFORM === "win32") {
-    const extractResult = await runProcess({
-      cmd: "powershell",
-      args: [
-        "-NoProfile",
-        "-Command",
-        `Expand-Archive -LiteralPath ${quotePowerShellLiteral(archivePath)} -DestinationPath ${quotePowerShellLiteral(destination)} -Force`,
-      ],
-      onOutput,
-    })
-    if (extractResult.exitCode !== 0) {
-      throw new Error(extractResult.stderr || `PowerShell extraction failed with exit code ${extractResult.exitCode}`)
-    }
+    cmd = "powershell"
+    args = [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -LiteralPath ${quotePowerShellLiteral(archivePath)} -DestinationPath ${quotePowerShellLiteral(destination)} -Force`,
+    ]
+    label = "PowerShell"
   } else if (archivePath.endsWith(".zip")) {
-    const extractResult = await runProcess({
-      cmd: "unzip",
-      args: ["-q", archivePath, "-d", destination],
-      onOutput,
-    })
-    if (extractResult.exitCode !== 0) {
-      throw new Error(extractResult.stderr || `unzip extraction failed with exit code ${extractResult.exitCode}`)
-    }
+    cmd = "unzip"
+    args = ["-q", archivePath, "-d", destination]
+    label = "unzip"
   } else {
-    const extractResult = await runProcess({
-      cmd: "tar",
-      args: ["-xzf", archivePath, "-C", destination],
-      onOutput,
-    })
-    if (extractResult.exitCode !== 0) {
-      throw new Error(extractResult.stderr || `tar extraction failed with exit code ${extractResult.exitCode}`)
+    cmd = "tar"
+    args = ["-xzf", archivePath, "-C", destination]
+    label = "tar"
+  }
+
+  const { result, abort } = runProcess({ cmd, args, onOutput })
+  const onAbort = () => abort()
+  if (signal) {
+    if (signal.aborted) {
+      abort()
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true })
     }
+  }
+  try {
+    const extractResult = await result
+    if (extractResult.exitCode !== 0) {
+      throw new Error(extractResult.stderr || `${label} extraction failed with exit code ${extractResult.exitCode}`)
+    }
+  } finally {
+    if (signal) signal.removeEventListener("abort", onAbort)
   }
 }
 
-async function getLatestRelease(): Promise<GitHubRelease | null> {
+async function getLatestRelease(signal?: AbortSignal): Promise<GitHubRelease | null> {
   try {
     const resp = await fetch("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", {
       headers: { "User-Agent": "quant-em" },
+      signal,
     })
     if (!resp.ok) return null
     return (await resp.json()) as GitHubRelease
@@ -202,6 +210,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   let installing = false
+  let abortController: AbortController | null = null
 
   const startInstall = async () => {
     if (installing) return
@@ -213,11 +222,13 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     const freshConfig = loadConfig()
 
     installing = true
+    abortController = new AbortController()
+    const signal = abortController.signal
     panel.clear()
     panel.setStatus("Fetching latest release...")
     panel.addLine("Fetching latest llama.cpp release info...", "cyan")
 
-    const release = await getLatestRelease()
+    const release = await getLatestRelease(signal)
     if (!release) {
       panel.setStatus("Failed")
       panel.addLine("Error: Could not fetch release info from GitHub", "red")
@@ -253,7 +264,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
       await downloadFile(asset.browser_download_url, tempFile, (downloaded, contentLength) => {
         const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
         panel.setStatus(`Downloading... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
-      })
+      }, signal)
 
       panel.addLine("Download complete. Extracting...", "green")
 
@@ -261,7 +272,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         fs.mkdirSync(installDir, { recursive: true })
       }
 
-      await extractArchive(tempFile, installDir, (line) => panel.addLine(line, "white"))
+      await extractArchive(tempFile, installDir, (line) => panel.addLine(line, "white"), signal)
 
       const quantizeBin = PLATFORM === "win32" ? "llama-quantize.exe" : "llama-quantize"
 
@@ -277,10 +288,11 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
           const pct = contentLength > 0 ? ((downloaded / contentLength) * 100).toFixed(1) : "?"
           panel.setStatus(`Downloading source... ${pct}% (${(downloaded / 1024 / 1024).toFixed(1)} MB)`)
         },
+        signal,
       )
       fs.rmSync(sourceDir, { recursive: true, force: true })
       fs.mkdirSync(sourceDir, { recursive: true })
-      await extractArchive(sourceZip, sourceDir, (line) => panel.addLine(line, "white"))
+      await extractArchive(sourceZip, sourceDir, (line) => panel.addLine(line, "white"), signal)
       const foundConvertScript = findFile(sourceDir, "convert_hf_to_gguf.py")
       const foundSourcePath = foundConvertScript ? path.dirname(foundConvertScript) : null
 
@@ -315,15 +327,22 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
         fs.unlinkSync(sourceZip)
       } catch {}
     } catch (err: unknown) {
-      panel.setStatus("Failed")
-      panel.addLine(`Error: ${err instanceof Error ? err.message : String(err)}`, "red")
+      if (!signal.aborted) {
+        panel.setStatus("Failed")
+        panel.addLine(`Error: ${err instanceof Error ? err.message : String(err)}`, "red")
+      }
     }
 
     installing = false
+    abortController = null
   }
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
+      if (abortController) {
+        abortController.abort()
+        abortController = null
+      }
       popScreen()
       return
     }
@@ -333,7 +352,13 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    renderer.keyInput.off("keypress", onKey)
+  })
 
   process.nextTick(() => {
     backendSelect.focus()

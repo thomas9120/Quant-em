@@ -75,6 +75,18 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   container.add(hintText)
 
   let downloading = false
+  let abortProcess: (() => void) | null = null
+  let focusedInput: "repo" | "include" = "repo"
+
+  const focusCurrentInput = () => {
+    repoInput.blur()
+    includeInput.blur()
+    if (focusedInput === "repo") {
+      repoInput.focus()
+    } else {
+      includeInput.focus()
+    }
+  }
 
   const startDownload = async () => {
     if (downloading) return
@@ -114,7 +126,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       env.HF_TOKEN = config.hfToken
     }
 
-    const result = await runProcess({
+    const { result, abort: abortDownload } = runProcess({
       cmd: getHfCommand(),
       args,
       env,
@@ -122,10 +134,14 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
     })
+    abortProcess = abortDownload
 
+    const resultData = await result
+
+    abortProcess = null
     downloading = false
 
-    if (result.exitCode === 0) {
+    if (resultData.exitCode === 0) {
       panel.setStatus("Complete!")
       panel.addLine("", "white")
       panel.addLine("Download complete!", "green")
@@ -136,9 +152,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       }
       panel.setStatus("Failed")
       panel.addLine("", "white")
-      panel.addLine(`Download failed (exit code ${result.exitCode})`, "red")
-      if (result.stderr) {
-        panel.addLine(result.stderr, "red")
+      panel.addLine(`Download failed (exit code ${resultData.exitCode})`, "red")
+      if (resultData.stderr) {
+        panel.addLine(resultData.stderr, "red")
       }
     }
   }
@@ -147,10 +163,31 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   includeInput.on("enter", () => startDownload())
 
   const onKey = (key: KeyEvent) => {
-    if (key.name === "escape") popScreen()
+    if (key.name === "escape") {
+      if (abortProcess) {
+        abortProcess()
+        abortProcess = null
+      }
+      popScreen()
+    }
+
+    if (key.name === "tab") {
+      focusedInput = focusedInput === "repo" ? "include" : "repo"
+      focusCurrentInput()
+    }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    if (abortProcess) {
+      abortProcess()
+      abortProcess = null
+    }
+    renderer.keyInput.off("keypress", onKey)
+  })
+
+  process.nextTick(() => {
+    focusCurrentInput()
+  })
 
   return container
 }

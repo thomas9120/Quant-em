@@ -309,15 +309,16 @@ export async function analyzeGgufFile(filePath: string, config: QuantEmConfig): 
     throw new Error("Could not find llama.cpp gguf_dump.py. Run Setup or configure the llama.cpp source path.")
   }
 
-  const result = await runProcess({
+  const { result } = runProcess({
     cmd: "python",
     args: [script, "--json", resolvePath(filePath)],
   })
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr || "gguf_dump.py failed")
+  const resultData = await result
+  if (resultData.exitCode !== 0) {
+    throw new Error(resultData.stderr || "gguf_dump.py failed")
   }
 
-  return extractProfileFromDump(parseGgufDumpJson(result.stdout), filePath)
+  return extractProfileFromDump(parseGgufDumpJson(resultData.stdout), filePath)
 }
 
 export function buildProfileFileName(profile: QuantizationProfile): string {

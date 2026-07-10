@@ -158,7 +158,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       if (key.name === "escape") popScreen()
     }
     renderer.keyInput.on("keypress", onKey)
-    setCleanup(() => renderer.keyInput.off("keypress", onKey))
+    setCleanup(() => {
+      renderer.keyInput.off("keypress", onKey)
+    })
 
     const noFiles = new TextRenderable(ctx, {
       id: "no-gguf",
@@ -659,6 +661,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   renderHistory()
 
   let quantizing = false
+  let abortProcess: (() => void) | null = null
   let focusedSelect: FocusedField = "file"
 
   const focusSelectedList = () => {
@@ -885,13 +888,18 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       imatrixFile,
     })
 
-    const result = await runProcess({
+    const { result, abort: abortQuantize } = runProcess({
       cmd: llamaQuantize,
       args,
       onOutput: (line, stream) => {
         panel.addLine(line, stream === "stderr" ? "yellow" : "white")
       },
     })
+    abortProcess = abortQuantize
+
+    const resultData = await result
+
+    abortProcess = null
     if (tensorTypeFile) {
       try {
         fs.rmSync(resolvePath(tensorTypeFile), { force: true })
@@ -900,11 +908,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     quantizing = false
-    const success = result.exitCode === 0
+    const success = resultData.exitCode === 0
     const historyQuantType = isUsingProfile() && profile
       ? `profile: ${profile.name}; base ${profile.baseQuantType}`
       : formatMixedQuantLabel(quantType, layerQuantValidation.rules)
-    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, result.exitCode, profilePath, imatrixFile)
+    rememberRun(selectedFile, quantType, historyQuantType, outputFile, validation.layers, success, resultData.exitCode, profilePath, imatrixFile)
 
     if (success) {
       panel.setStatus("Complete!")
@@ -914,11 +922,11 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     } else {
       panel.setStatus("Failed")
       panel.addLine("", "white")
-      panel.addLine(`Quantization failed (exit code ${result.exitCode})`, "red")
-      if (result.stderr) {
-        panel.addLine(result.stderr, "red")
+      panel.addLine(`Quantization failed (exit code ${resultData.exitCode})`, "red")
+      if (resultData.stderr) {
+        panel.addLine(resultData.stderr, "red")
       }
-      for (const hint of getFailureHints(result, llamaQuantize)) {
+      for (const hint of getFailureHints(resultData, llamaQuantize)) {
         panel.addLine(`Hint: ${hint}`, "yellow")
       }
     }
@@ -926,6 +934,10 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
+      if (abortProcess) {
+        abortProcess()
+        abortProcess = null
+      }
       popScreen()
       return
     }
@@ -963,7 +975,13 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    if (abortProcess) {
+      abortProcess()
+      abortProcess = null
+    }
+    renderer.keyInput.off("keypress", onKey)
+  })
 
   process.nextTick(() => {
     focusSelectedList()
