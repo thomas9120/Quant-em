@@ -10,7 +10,7 @@ import {
 } from "@opentui/core"
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, saveConfig, resolvePath, ensureDir } from "../lib/config"
-import { scanForGgufFiles, formatFileSize, getGgufLayerCount, isSafeFileName, collectGgufFiles } from "../lib/file_utils"
+import { scanForGgufFiles, formatFileSize, getGgufLayerCount, isSafeFileName, collectImatrixFiles } from "../lib/file_utils"
 import { runProcess } from "../lib/process_runner"
 import { createProcessPanel } from "./components/process_panel"
 import {
@@ -149,7 +149,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   header.add(columnHint)
 
   const files = scanForGgufFiles(config.sourceModelsDir)
-  const imatrixFiles = collectGgufFiles(config.sourceModelsDir, config.outputModelsDir)
+  const imatrixFiles = collectImatrixFiles(config.sourceModelsDir, config.outputModelsDir)
   const profiles = scanForQuantizationProfiles(config.quantProfilesDir)
   const hasProfiles = profiles.length > 0
 

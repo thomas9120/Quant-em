@@ -34,15 +34,23 @@ export function createProcessPanel(ctx: RenderContext, id: string): {
   })
   container.add(scrollBox)
 
+  const MAX_LINES = 500
   let lineCounter = 0
+  const lineIds: string[] = []
 
   const addLine = (text: string, color: string = "white") => {
+    const lineId = `${id}-line-${lineCounter++}`
     const line = new TextRenderable(ctx, {
-      id: `${id}-line-${lineCounter++}`,
+      id: lineId,
       content: text,
       fg: color,
     })
     scrollBox.add(line)
+    lineIds.push(lineId)
+    if (lineIds.length > MAX_LINES) {
+      const oldest = lineIds.shift()!
+      scrollBox.remove(oldest)
+    }
     scrollBox.requestRender()
     container.requestRender()
   }
@@ -53,6 +61,7 @@ export function createProcessPanel(ctx: RenderContext, id: string): {
       scrollBox.remove(child.id)
     }
     lineCounter = 0
+    lineIds.length = 0
     scrollBox.requestRender()
     container.requestRender()
   }
