@@ -50,4 +50,16 @@ describe("runProcess", () => {
     expect(data.stderr.length).toBeGreaterThan(0)
     expect(stderrLines).toEqual([data.stderr])
   })
+
+  test("abort kills a long-running process and the result still settles", async () => {
+    const { result, abort } = runProcess({
+      cmd: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 30000)"],
+    })
+
+    setTimeout(abort, 100)
+    const data = await result
+
+    expect(data.exitCode).not.toBe(0)
+  }, 10000)
 })

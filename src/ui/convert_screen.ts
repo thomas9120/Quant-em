@@ -135,7 +135,16 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   let converting = false
   let abortProcess: (() => void) | null = null
+  let processAborted = false
   let focusedSelect: "dir" | "precision" = "dir"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
 
   const focusSelectedList = () => {
     dirSelect.blur()
@@ -188,6 +197,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
     const args = [convertTool.scriptPath, modelDir, "--outfile", outputFile, "--outtype", precision]
 
+    processAborted = false
     const { result, abort: abortConvert } = runProcess({
       cmd: "python",
       args,
@@ -206,6 +216,8 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     abortProcess = null
     converting = false
 
+    if (processAborted) return
+
     if (resultData.exitCode === 0) {
       panel.setStatus("Complete!")
       panel.addLine("", "white")
@@ -223,10 +235,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
-      if (abortProcess) {
-        abortProcess()
-        abortProcess = null
-      }
+      abortRunningProcess()
       popScreen()
       return
     }
@@ -242,7 +251,10 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     }
   }
   renderer.keyInput.on("keypress", onKey)
-  setCleanup(() => renderer.keyInput.off("keypress", onKey))
+  setCleanup(() => {
+    abortRunningProcess()
+    renderer.keyInput.off("keypress", onKey)
+  })
 
   process.nextTick(() => {
     focusSelectedList()

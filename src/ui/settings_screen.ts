@@ -196,7 +196,7 @@ export function createSettingsScreen(renderer: CliRenderer): BoxRenderable {
       }
     }
 
-    if (key.name === "tab") {
+    if (key.name === "tab" && !confirmEscapeActive) {
       focusedIndex = (focusedIndex + 1) % inputs.length
       focusCurrentInput()
     }

@@ -128,14 +128,9 @@ export function runProcess(opts: RunProcessOptions): RunProcessHandle {
 }
 
 export async function checkCommandExists(cmd: string): Promise<boolean> {
-  try {
-    const { result } = runProcess({
-      cmd: process.platform === "win32" ? "where" : "which",
-      args: [cmd],
-    })
-    const res = await result
-    return res.exitCode === 0
-  } catch {
-    return false
-  }
+  const { result } = runProcess({
+    cmd: process.platform === "win32" ? "where" : "which",
+    args: [cmd],
+  })
+  return (await result).exitCode === 0
 }

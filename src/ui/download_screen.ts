@@ -76,7 +76,16 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
 
   let downloading = false
   let abortProcess: (() => void) | null = null
+  let processAborted = false
   let focusedInput: "repo" | "include" = "repo"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
 
   const focusCurrentInput = () => {
     repoInput.blur()
@@ -127,6 +136,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
       env.HF_TOKEN = effectiveToken
     }
 
+    processAborted = false
     const { result, abort: abortDownload } = runProcess({
       cmd: getHfCommand(),
       args,
@@ -141,6 +151,13 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
 
     abortProcess = null
     downloading = false
+
+    if (processAborted) {
+      if (!localDirExistedBefore) {
+        removeDirIfEmpty(path.join(config.sourceModelsDir, repoName))
+      }
+      return
+    }
 
     if (resultData.exitCode === 0) {
       panel.setStatus("Complete!")
@@ -165,11 +182,9 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
-      if (abortProcess) {
-        abortProcess()
-        abortProcess = null
-      }
+      abortRunningProcess()
       popScreen()
+      return
     }
 
     if (key.name === "tab") {
@@ -179,10 +194,7 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => {
-    if (abortProcess) {
-      abortProcess()
-      abortProcess = null
-    }
+    abortRunningProcess()
     renderer.keyInput.off("keypress", onKey)
   })
 

@@ -670,7 +670,16 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   let quantizing = false
   let abortProcess: (() => void) | null = null
+  let processAborted = false
   let focusedSelect: FocusedField = "file"
+
+  const abortRunningProcess = () => {
+    if (abortProcess) {
+      processAborted = true
+      abortProcess()
+      abortProcess = null
+    }
+  }
   const tabOrder: FocusedField[] = [
     "file", "mode", "quant", "embedding",
     ...(hasProfiles ? (["profile"] as FocusedField[]) : []),
@@ -900,6 +909,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
       imatrixFile,
     })
 
+    processAborted = false
     const { result, abort: abortQuantize } = runProcess({
       cmd: llamaQuantize,
       args,
@@ -920,6 +930,9 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
     }
 
     quantizing = false
+
+    if (processAborted) return
+
     const success = resultData.exitCode === 0
     const historyQuantType = isUsingProfile() && profile
       ? `profile: ${profile.name}; base ${profile.baseQuantType}`
@@ -946,10 +959,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
 
   const onKey = (key: KeyEvent) => {
     if (key.name === "escape") {
-      if (abortProcess) {
-        abortProcess()
-        abortProcess = null
-      }
+      abortRunningProcess()
       popScreen()
       return
     }
@@ -970,10 +980,7 @@ export function createQuantizeScreen(renderer: CliRenderer): BoxRenderable {
   }
   renderer.keyInput.on("keypress", onKey)
   setCleanup(() => {
-    if (abortProcess) {
-      abortProcess()
-      abortProcess = null
-    }
+    abortRunningProcess()
     renderer.keyInput.off("keypress", onKey)
   })
 

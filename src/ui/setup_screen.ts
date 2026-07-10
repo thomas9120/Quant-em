@@ -104,6 +104,7 @@ async function downloadFile(url: string, destination: string, onProgress?: (down
       onProgress?.(downloaded, contentLength)
     }
   } finally {
+    reader.cancel().catch(() => {})
     await file.end()
   }
 }
@@ -272,10 +273,13 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
     const release = await getLatestRelease(signal)
     if (!release) {
-      panel.setStatus("Failed")
-      panel.addLine("Error: Could not fetch release info from GitHub", "red")
-      panel.addLine("Check your internet connection", "yellow")
+      if (!signal.aborted) {
+        panel.setStatus("Failed")
+        panel.addLine("Error: Could not fetch release info from GitHub", "red")
+        panel.addLine("Check your internet connection", "yellow")
+      }
       installing = false
+      abortController = null
       return
     }
 
@@ -286,6 +290,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
       panel.setStatus("Failed")
       panel.addLine(`Error: No matching release asset found for ${backend} on ${getPlatformLabel()}`, "red")
       installing = false
+      abortController = null
       return
     }
 
