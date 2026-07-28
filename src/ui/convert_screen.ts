@@ -11,6 +11,7 @@ import { loadConfig, resolvePath, ensureDir } from "../lib/config"
 import { scanForSafetensorsDirs } from "../lib/file_utils"
 import { runProcess, checkCommandExists } from "../lib/process_runner"
 import { buildPythonPath, findConvertScript, getRequirementsPath } from "../lib/convert_tool"
+import { getProjectVenvPython } from "../lib/project_venv"
 import { createProcessPanel } from "./components/process_panel"
 import * as path from "path"
 
@@ -164,7 +165,8 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
     const precision = precisionSelect.getSelectedOption()?.value as string
 
-    const hasPython = await checkCommandExists("python")
+    const pythonCmd = getProjectVenvPython() || "python"
+    const hasPython = getProjectVenvPython() ? true : await checkCommandExists("python")
     if (!hasPython) {
       panel.addLine("Error: Python not found. Install Python to use conversion.", "red")
       return
@@ -190,6 +192,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
     panel.clear()
     panel.setStatus("Converting...")
     panel.addLine(`Converting ${selectedDir} to GGUF (${precision})...`, "cyan")
+    panel.addLine(`Python: ${pythonCmd}`, "gray")
 
     const modelDir = resolvePath(path.join(config.sourceModelsDir, selectedDir))
     ensureDir(config.outputModelsDir)
@@ -199,7 +202,7 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
 
     processAborted = false
     const { result, abort: abortConvert } = runProcess({
-      cmd: "python",
+      cmd: pythonCmd,
       args,
       cwd: convertTool.scriptDir,
       env: {
@@ -227,8 +230,9 @@ export function createConvertScreen(renderer: CliRenderer): BoxRenderable {
       panel.setStatus("Failed")
       panel.addLine("", "white")
       panel.addLine(`Conversion failed (exit code ${resultData.exitCode})`, "red")
-      if (resultData.stderr.includes("ModuleNotFoundError")) {
-        panel.addLine(`Hint: install conversion dependencies with python -m pip install -r ${getRequirementsPath(convertTool.scriptDir)}`, "yellow")
+      if (resultData.stderr.includes("ModuleNotFoundError") || resultData.stdout.includes("ModuleNotFoundError")) {
+        panel.addLine("Hint: install conversion deps from Setup → GGUF converter deps", "yellow")
+        panel.addLine(`Or: "${pythonCmd}" -m pip install -r ${getRequirementsPath(convertTool.scriptDir)}`, "yellow")
       }
     }
   }

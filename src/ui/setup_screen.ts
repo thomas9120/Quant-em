@@ -11,6 +11,7 @@ import { loadConfig, resolvePath, saveConfig } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { findAssetForBackend, type GitHubRelease } from "../lib/setup_release"
 import { installProjectHfCli } from "../lib/hf_cli"
+import { installConvertDependencies } from "../lib/convert_tool"
 import { createProcessPanel } from "./components/process_panel"
 import type { QuantEmConfig } from "../types"
 import * as path from "path"
@@ -226,11 +227,12 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     { name: "CUDA 13", description: "llama.cpp NVIDIA GPU with CUDA 13.x", value: "cuda-13" },
     { name: "Vulkan", description: "llama.cpp Vulkan GPU acceleration", value: "vulkan" },
     { name: "HuggingFace CLI", description: "Create .venv and install hf download tool", value: "hf-cli" },
+    { name: "GGUF converter deps", description: "Install Python packages for safetensors → GGUF", value: "convert-deps" },
   ]
 
   const backendSelect = new SelectRenderable(ctx, {
     id: "backend-select",
-    height: 10,
+    height: 12,
     options: backendOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -280,6 +282,32 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
     installing = false
   }
 
+  const startConvertDepsInstall = async () => {
+    installing = true
+    panel.clear()
+    panel.setStatus("Installing GGUF converter deps...")
+    panel.addLine("Installing llama.cpp convert_hf_to_gguf requirements into .venv...", "cyan")
+    panel.addLine("Includes torch — this can take a while and use several GB.", "yellow")
+
+    const result = await installConvertDependencies((line, stream) => {
+      panel.addLine(line, stream === "stderr" ? "yellow" : "white")
+    })
+
+    if (result.ok) {
+      panel.addLine("", "white")
+      panel.addLine("GGUF converter dependencies installed!", "green")
+      if (result.requirementsPath) {
+        panel.addLine(`From: ${result.requirementsPath}`, "green")
+      }
+      panel.setStatus("Installed!")
+    } else {
+      panel.setStatus("Failed")
+      panel.addLine(result.error || "Converter dependency install failed", "red")
+    }
+
+    installing = false
+  }
+
   const startInstall = async () => {
     if (installing) return
 
@@ -288,6 +316,11 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
     if (selectedValue === "hf-cli") {
       await startHfCliInstall()
+      return
+    }
+
+    if (selectedValue === "convert-deps") {
+      await startConvertDepsInstall()
       return
     }
 

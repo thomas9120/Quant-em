@@ -33,7 +33,7 @@ export function createMainMenuScreen(renderer: CliRenderer): BoxRenderable {
     { name: "Convert to GGUF", description: "Convert safetensors to GGUF format", value: "convert" },
     { name: "Quantize Model", description: "Quantize a GGUF model", value: "quantize" },
     { name: "Analyze GGUF Profile", description: "Extract a reusable quantization profile from a GGUF", value: "analyze-profile" },
-    { name: "Setup", description: "Install llama.cpp or HuggingFace CLI", value: "setup" },
+    { name: "Setup", description: "Install llama.cpp, HF CLI, or converter deps", value: "setup" },
     { name: "Settings", description: "Configure paths and defaults", value: "settings" },
     { name: "Exit", description: "Quit Quant-em", value: "exit" },
   ]

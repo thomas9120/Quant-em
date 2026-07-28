@@ -1,6 +1,8 @@
 import * as fs from "fs"
 import * as path from "path"
-import { resolvePath } from "./config"
+import { loadConfig, resolvePath } from "./config"
+import { ensureProjectVenv } from "./project_venv"
+import { runProcess, type ProcessOutputCallback } from "./process_runner"
 
 export interface ConvertTool {
   scriptPath: string
@@ -57,4 +59,42 @@ export function getRequirementsPath(scriptDir: string): string {
   const convertRequirements = path.join(scriptDir, "requirements", "requirements-convert_hf_to_gguf.txt")
   if (fs.existsSync(convertRequirements)) return convertRequirements
   return path.join(scriptDir, "requirements.txt")
+}
+
+export async function installConvertDependencies(
+  onOutput?: ProcessOutputCallback,
+): Promise<{ ok: boolean; requirementsPath?: string; error?: string }> {
+  const config = loadConfig()
+  const tool = findConvertScript(config.llamaCppSourcePath, config.llamaCppPath)
+  if (!tool) {
+    return {
+      ok: false,
+      error: "convert_hf_to_gguf.py not found. Install llama.cpp from Setup first.",
+    }
+  }
+
+  const requirementsPath = getRequirementsPath(tool.scriptDir)
+  if (!fs.existsSync(requirementsPath)) {
+    return { ok: false, error: `Requirements file not found: ${requirementsPath}` }
+  }
+
+  const venv = await ensureProjectVenv(onOutput)
+  if (!venv.ok) {
+    return { ok: false, error: venv.error }
+  }
+
+  onOutput?.(`Installing conversion deps from ${requirementsPath}...`, "stdout")
+  onOutput?.("This pulls in torch and may take several minutes.", "stdout")
+  const { result } = runProcess({
+    cmd: venv.pythonPath,
+    args: ["-m", "pip", "install", "-r", requirementsPath],
+    cwd: tool.scriptDir,
+    onOutput,
+  })
+  const data = await result
+  if (data.exitCode !== 0) {
+    return { ok: false, requirementsPath, error: data.stderr || "pip install failed" }
+  }
+
+  return { ok: true, requirementsPath }
 }

@@ -6,9 +6,10 @@ Quant-em is a terminal UI for downloading Hugging Face models, converting safete
 
 - Windows, macOS, or Linux
 - [Bun](https://bun.sh/) installed
-- Python, for Hugging Face downloads (via Setup) and safetensors → GGUF conversion
-- Hugging Face CLI (`hf`) for Download Model — install from Setup → HuggingFace CLI, or `python -m pip install -U "huggingface_hub[cli]"`
+- Python, for Hugging Face downloads / GGUF conversion (via Setup project `.venv`)
+- Hugging Face CLI (`hf`) for Download Model — Setup → HuggingFace CLI, or `python -m pip install -U "huggingface_hub[cli]"`
 - llama.cpp tools, installed through the app's Setup screen or configured in Settings
+- GGUF converter Python deps (torch, transformers, …) for Convert to GGUF — Setup → GGUF converter deps after llama.cpp is installed
 
 ## Start
 
@@ -35,7 +36,7 @@ Fresh clones do not need this file. The app uses built-in defaults and writes a 
 
 Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to go back.
 
-- Setup: install llama.cpp binaries, or create a project `.venv` and install the Hugging Face CLI.
+- Setup: install llama.cpp binaries, Hugging Face CLI, and/or GGUF converter Python deps into a project `.venv`.
 - Settings: configure llama.cpp binary/source paths, source model directory, output directory, threads, and Hugging Face token.
 - Download Model: download a Hugging Face repo into `source_models/` (requires the `hf` CLI).
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
@@ -45,11 +46,17 @@ Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to 
 
 The GGUF converter is not a standalone Python file. It needs the llama.cpp source tree, including `gguf-py/`, plus Python packages from llama.cpp's conversion requirements. Quant-em's Setup screen downloads the matching llama.cpp source archive alongside the binary tools and saves it as the llama.cpp source path.
 
-If Python reports a missing package such as `torch`, `numpy`, or `transformers`, install llama.cpp's conversion requirements from that source path:
+Then install the converter packages into the project `.venv`:
+
+1. Setup → **GGUF converter deps** (recommended), or
+2. Manually:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m venv .venv
+.venv\Scripts\python -m pip install -r path\to\llama.cpp\requirements\requirements-convert_hf_to_gguf.txt
 ```
+
+That requirements file pulls in PyTorch and can take several minutes. Convert to GGUF prefers `.venv` Python when present.
 
 ### Per-layer quantization
 

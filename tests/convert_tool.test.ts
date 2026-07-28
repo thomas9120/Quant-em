@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { buildPythonPath, findConvertScript, getRequirementsPath } from "../src/lib/convert_tool"
+import { buildPythonPath, findConvertScript, getRequirementsPath, installConvertDependencies } from "../src/lib/convert_tool"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -72,5 +72,11 @@ describe("convert tool helpers", () => {
     fs.writeFileSync(convertRequirements, "")
 
     expect(getRequirementsPath(scriptDir)).toBe(convertRequirements)
+  })
+
+  test("installConvertDependencies fails clearly when converter script is missing", async () => {
+    const result = await installConvertDependencies()
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain("convert_hf_to_gguf.py not found")
   })
 })
