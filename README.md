@@ -6,7 +6,8 @@ Quant-em is a terminal UI for downloading Hugging Face models, converting safete
 
 - Windows, macOS, or Linux
 - [Bun](https://bun.sh/) installed
-- Python, if you want to convert safetensors models to GGUF
+- Python, for Hugging Face downloads (via Setup) and safetensors → GGUF conversion
+- Hugging Face CLI (`hf`) for Download Model — install from Setup → HuggingFace CLI, or `python -m pip install -U "huggingface_hub[cli]"`
 - llama.cpp tools, installed through the app's Setup screen or configured in Settings
 
 ## Start
@@ -34,9 +35,9 @@ Fresh clones do not need this file. The app uses built-in defaults and writes a 
 
 Use arrow keys to move, Enter to select/start, Tab to switch fields, and Esc to go back.
 
-- Setup: install or manage llama.cpp binaries.
+- Setup: install llama.cpp binaries, or create a project `.venv` and install the Hugging Face CLI.
 - Settings: configure llama.cpp binary/source paths, source model directory, output directory, threads, and Hugging Face token.
-- Download Model: download a Hugging Face repo into `source_models/`.
+- Download Model: download a Hugging Face repo into `source_models/` (requires the `hf` CLI).
 - Convert to GGUF: convert a safetensors model directory into a GGUF file.
 - Quantize Model: choose a GGUF file, select a quantization type, optionally choose an existing imatrix GGUF, optionally keep split GGUF outputs sharded, optionally enter comma-separated layer numbers to prune, then start quantization.
 

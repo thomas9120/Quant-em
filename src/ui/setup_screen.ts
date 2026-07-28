@@ -10,6 +10,7 @@ import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, saveConfig } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
 import { findAssetForBackend, type GitHubRelease } from "../lib/setup_release"
+import { installProjectHfCli } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
 import type { QuantEmConfig } from "../types"
 import * as path from "path"
@@ -189,7 +190,7 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
   const title = new TextRenderable(ctx, {
     id: "setup-title",
-    content: "=== Setup llama.cpp ===",
+    content: "=== Setup ===",
     fg: "cyan",
   })
   container.add(title)
@@ -213,22 +214,23 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
 
   const backendLabel = new TextRenderable(ctx, {
     id: "backend-label",
-    content: "Select backend:",
+    content: "Select install target:",
     fg: "white",
     marginTop: 1,
   })
   container.add(backendLabel)
 
   const backendOptions: SelectOption[] = [
-    { name: "CPU", description: "CPU only (works everywhere)", value: "cpu" },
-    { name: "CUDA 12", description: "NVIDIA GPU with CUDA 12.x", value: "cuda-12" },
-    { name: "CUDA 13", description: "NVIDIA GPU with CUDA 13.x", value: "cuda-13" },
-    { name: "Vulkan", description: "Vulkan GPU acceleration", value: "vulkan" },
+    { name: "CPU", description: "llama.cpp CPU only (works everywhere)", value: "cpu" },
+    { name: "CUDA 12", description: "llama.cpp NVIDIA GPU with CUDA 12.x", value: "cuda-12" },
+    { name: "CUDA 13", description: "llama.cpp NVIDIA GPU with CUDA 13.x", value: "cuda-13" },
+    { name: "Vulkan", description: "llama.cpp Vulkan GPU acceleration", value: "vulkan" },
+    { name: "HuggingFace CLI", description: "Create .venv and install hf download tool", value: "hf-cli" },
   ]
 
   const backendSelect = new SelectRenderable(ctx, {
     id: "backend-select",
-    height: 8,
+    height: 10,
     options: backendOptions,
     backgroundColor: "black",
     textColor: "white",
@@ -255,12 +257,42 @@ export function createSetupScreen(renderer: CliRenderer): BoxRenderable {
   let installing = false
   let abortController: AbortController | null = null
 
+  const startHfCliInstall = async () => {
+    installing = true
+    panel.clear()
+    panel.setStatus("Installing HuggingFace CLI...")
+    panel.addLine("Creating project .venv and installing huggingface_hub[cli]...", "cyan")
+
+    const result = await installProjectHfCli((line, stream) => {
+      panel.addLine(line, stream === "stderr" ? "yellow" : "white")
+    })
+
+    if (result.ok && result.hfPath) {
+      panel.addLine("", "white")
+      panel.addLine("HuggingFace CLI installed!", "green")
+      panel.addLine(`hf: ${result.hfPath}`, "green")
+      panel.setStatus("Installed!")
+    } else {
+      panel.setStatus("Failed")
+      panel.addLine(result.error || "HuggingFace CLI install failed", "red")
+    }
+
+    installing = false
+  }
+
   const startInstall = async () => {
     if (installing) return
 
-    const backendValue = backendSelect.getSelectedOption()?.value as string
-    if (!backendValue || !isBackend(backendValue)) return
-    const backend: Backend = backendValue
+    const selectedValue = backendSelect.getSelectedOption()?.value as string
+    if (!selectedValue) return
+
+    if (selectedValue === "hf-cli") {
+      await startHfCliInstall()
+      return
+    }
+
+    if (!isBackend(selectedValue)) return
+    const backend: Backend = selectedValue
 
     const freshConfig = loadConfig()
 
