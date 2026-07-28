@@ -4,6 +4,7 @@ const pureTestFiles = [
   "tests/file_utils.test.ts",
   "tests/convert_tool.test.ts",
   "tests/setup_release.test.ts",
+  "tests/hf_cli.test.ts",
 ]
 
 function run(args: string[]) {

@@ -8,7 +8,7 @@ import {
 import { popScreen, setCleanup } from "./navigator"
 import { loadConfig, resolvePath, ensureDir, getEffectiveHfToken } from "../lib/config"
 import { runProcess } from "../lib/process_runner"
-import { getHfCommand } from "../lib/hf_cli"
+import { checkHfCommandExists, getHfCommand } from "../lib/hf_cli"
 import { createProcessPanel } from "./components/process_panel"
 import { sanitizeDirName, removeDirIfEmpty } from "../lib/file_utils"
 import * as path from "path"
@@ -108,6 +108,15 @@ export function createDownloadScreen(renderer: CliRenderer): BoxRenderable {
 
     if (!repoId.includes("/") || repoId.split("/").length !== 2 || repoId.includes("..")) {
       panel.addLine("Error: Invalid repo ID. Expected format: org/model-name", "red")
+      return
+    }
+
+    if (!(await checkHfCommandExists())) {
+      panel.clear()
+      panel.setStatus("Failed")
+      panel.addLine("Error: Hugging Face CLI (hf) not found.", "red")
+      panel.addLine("Install it from Setup → HuggingFace CLI", "yellow")
+      panel.addLine('Or run: python -m pip install -U "huggingface_hub[cli]"', "yellow")
       return
     }
 
